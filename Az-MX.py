@@ -7,18 +7,21 @@ import pycurl
 from io import BytesIO
 from operator import itemgetter
 
-# Azure credentials
-
-subscription = 'enter subscription'
-outputBlobSasUrl = 'enter outputBlobSasUrl'
-
 # Meraki credentials
 
-api_key = 'enter api key'
+api_key = '$meraki-dashboard-api-key'
+orgid = '$meraki-org-id'
+header = {"X-Cisco-Meraki-API-Key": "$meraki-dashboard-api-key", "Content-Type": "application/json"}
 
-header = {"X-Cisco-Meraki-API-Key": api_key, "Content-Type": "application/json"}
+#Azure credentials 
 
-# logging into azure
+subscription = '$subscription'
+
+vpngw = '$vpngateway-name'
+outputblobsasurl2 = '$ouputblobsasurl'
+
+
+# logging into azure, please update with your username and password
 
 def refreshToken():
     proc = subprocess.Popen("az login -u $username -p $password",stdout=subprocess.PIPE, shell=True)
@@ -30,7 +33,7 @@ refreshToken()
 
 tokens = []
 def authtoken():
-    proc = subprocess.Popen("az account get-access-token --subscription "+ subscription + '""' ",stdout=subprocess.PIPE, shell=True)
+    proc = subprocess.Popen("az account get-access-token --subscription '+subscription+'",stdout=subprocess.PIPE, shell=True)
     (cpu,err) = proc.communicate()
     xi = cpu
     y = json.loads(xi.decode('utf-8'))
@@ -53,9 +56,11 @@ headers.update(header1)
 
 # Get list of vWAN stuff
 
-vWANlist = json.loads(requests.get('https://management.azure.com/subscriptions/'+subscription+'/providers/Microsoft.Network/virtualWans?api-version=2019-11-01', headers=headers).content)
+vWANlist = json.loads(requests.get('https://management.azure.com/subscriptions/"+subscription+"/providers/Microsoft.Network/virtualWans?api-version=2019-11-01', headers=headers).content)
 
 vpnlist = vWANlist
+
+#print(vpnlist['value'])
 
 value = vpnlist['value']
 
@@ -66,11 +71,12 @@ vpnsites = prop['vpnSites']
 
 #start of meraki loop
 
+
 branchsubnets = []
 merakivpns = []
-# enter actual meraki org ID where orgID is specified
 
-networkstags = 'https://api.meraki.com/api/v0/organizations/$orgID/networks'
+
+networkstags = 'https://api.meraki.com/api/v0/organizations/"+orgid+"/networks'
 tagsnetwork = json.loads(requests.get(networkstags, headers=header).content)
 for i in tagsnetwork:
         if i['tags'] is None:
@@ -83,7 +89,7 @@ for i in tagsnetwork:
                 va = ma.networks.getNetworkSiteToSiteVpn(network_info)
                 (va)
                 (va['subnets'])
-                testextract = ([x['localSubnet'] for x in va['subnets'] if x['useVpn'] == True])  # filtering dictionary for all subnets in VPN
+                testextract = ([x['localSubnet'] for x in va['subnets'] if x['useVpn'] == True])  # for placeholder
                 (testextract)
 
                 privsub = str(testextract)[1:-1]
@@ -167,50 +173,58 @@ for i in tagsnetwork:
                 print(netname2)
                 if netname2 in str(vpnlist):
                     print("found")
-                    vpnsitedata = '{"tags":{"key1":"value1"},"location":"West US","properties":{"virtualWan":{"id":"/subscriptions/fba9b1df-d1b9-4fd7-8253-030be28fcf8b/resourceGroups/MitchellvMX/providers/Microsoft.Network/virtualWans/vWANstandard"},"addressSpace":{"addressPrefixes":['+str(privsub)+']},"deviceProperties": {"deviceVendor": "vendor1","deviceModel": "model01","linkSpeedInMbps": 200},"isSecuritySite":"false","vpnSiteLinks":[{"name":"test3","properties":{"ipAddress":"' + str(pubs) + '","linkProperties":{"linkProviderName":"'+str(localsp)+'","linkSpeedInMbps":"'+str(port)+'"},"bgpProperties":{"bgpPeeringAddress":"192.168.0.0","asn":"1234"}}}]}}'
+                    vpnsitedata = '{"tags":{"key1":"value1"},"location":"West US","properties":{"virtualWan":{"id":"/subscriptions/'+subscriprion+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/virtualWans/vWANstandard"},"addressSpace":{"addressPrefixes":['+str(privsub)+']},"deviceProperties": {"deviceVendor": "vendor1","deviceModel": "model01","linkSpeedInMbps": "200"},"isSecuritySite":"false","vpnSiteLinks":[{"name":"'+netname2+'-link","properties":{"ipAddress":"' + str(pubs) + '","linkProperties":{"linkProviderName":"'+str(localsp)+'","linkSpeedInMbps":"'+str(port)+'"}}}]}}'
 
-                    createvpnsite = requests.put('https://management.azure.com/subscriptions/'+subscription+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/vpnSites/'+ netname2 +'?api-version=2019-11-01', data=vpnsitedata, headers=headers)
+                    createvpnsite = requests.put('https://management.azure.com/subscriptions/'+subscriprion+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/vpnSites/'+ netname2 +'?api-version=2019-11-01', data=vpnsitedata, headers=headers)
                     print(createvpnsite)
 
                 else:
-
+                    
                     # creating the VPN site
                     print("privatesub")
                     print(str(privsub))
 
-                    vpnsitedata = '{"tags":{"key1":"value1"},"location":"West US","properties":{"virtualWan":{"id":"/subscriptions/'+subscription+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/virtualWans/vWANstandard"},"addressSpace":{"addressPrefixes":['+str(privsub)+']},"deviceProperties": {"deviceVendor": "vendor1","deviceModel": "model01","linkSpeedInMbps": 200},"isSecuritySite":"false","vpnSiteLinks":[{"name":"test3","properties":{"ipAddress":"' + str(pubs) + '","linkProperties":{"linkProviderName":"'+str(localsp)+'","linkSpeedInMbps":"'+str(port)+'"},"bgpProperties":{"bgpPeeringAddress":"192.168.0.0","asn":"1234"}}}]}}'
+
+                    vpnsitedata1 = '{"tags":{"key1":"value1"},"location":"West US","properties":{"virtualWan":{"id":"/subscriptions/'+subscriprion+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/virtualWans/vWANstandard"},"addressSpace":{"addressPrefixes":['+str(privsub)+']},"deviceProperties": {"deviceVendor": "vendor1","deviceModel": "model01","linkSpeedInMbps": "200"},"isSecuritySite":"false","vpnSiteLinks":[{"name":"'+netname2+'-link","properties":{"ipAddress":"'+str(pubs)+'","linkProperties":{"linkProviderName":"'+str(localsp)+'","linkSpeedInMbps":"'+str(port)+'"}}}]}}'
 
 
-                    createvpnsite = requests.put('https://management.azure.com/subscriptions/'+subscription+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/vpnSites/'+ netname2 +'?api-version=2019-11-01', data=vpnsitedata, headers=headers)
+                    createvpnsite = requests.put('https://management.azure.com/subscriptions/'+subscription+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/vpnSites/'+netname2+'?api-version=2019-11-01', data=vpnsitedata1, headers=headers)
                     print(createvpnsite)
 
                     # creating vpn connection between vpn site and vpn gateway
-                    vpnconndata = '{"properties":{"remoteVpnSite":{"id": "/subscriptions/'+subscription+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/vpnSites/'+netname2+'"},"vpnLinkConnections":[{"name":"'+netname2+'-vpnname","properties":{"vpnSiteLink":{"id": "/subscriptions/'+subscription+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/vpnSites/'+netname2+'/vpnSiteLinks/'+netname2+'"},"connectionBandwidth": 200,"vpnConnectionProtocolType": "IKEv1","sharedKey": "meraki123"}}]}}'
 
-                    #createvpnaz = requests.put('https://management.azure.com/subscriptions/fba9b1df-d1b9-4fd7-8253-030be28fcf8b/resourceGroups/MitchellvMX/providers/Microsoft.Network/vpnGateways/9f1f2fb11300438ca4a6ec979f52a574-westus-gw/vpnConnections/'+ netname2 +'?api-version=2019-11-01',data=vpnconndata,headers=headers)
-                    createvpnaz = requests.put('https://management.azure.com/subscriptions/'+subscription+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/vpnGateways/$enterVPNGateway/vpnConnections/'+ netname2 +'?api-version=2019-11-01',data=vpnconndata,headers=headers)
+
+                    vpnconndata1 = '{"properties":{"remoteVpnSite":{"id":"/subscriptions/'+subscriprion+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/vpnSites/'+netname2+'"},"vpnLinkConnections":[{"name":"'+netname2+'-conn","properties":{"vpnSiteLink":{"id":"/subscriptions/fba9b1df-d1b9-4fd7-8253-030be28fcf8b/resourceGroups/MitchellvMX/providers/Microsoft.Network/vpnSites/'+netname2+'/vpnSiteLinks/'+netname2+'-link"},"vpnConnectionProtocolType":"IKEv1"}}]}}'
+
+                    createvpnaz = requests.put('https://management.azure.com/subscriptions/'+subscriprion+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/vpnGateways/'+vpngw+'/vpnConnections/'+netname2+'-connection?api-version=2019-11-01',data=vpnconndata1,headers=headers)
                     print(createvpnaz.reason)
 
-                #else:
-                    #print("placeholder")
 
                 # now we have to get the VPN config from Azure to update Meraki
                 vpnsiteids = (vpnsites)
 
                 res2 = list(map(itemgetter('id'), vpnsiteids))
-                print(res2)
-                print("res2")
-                #download = '{vpnSites: ["/subscriptions/fba9b1df-d1b9-4fd7-8253-030be28fcf8b/resourceGroups/MitchellvMX/providers/Microsoft.Network/vpnSites/test2"], outputBlobSasUrl:"https://config1581627241639.blob.core.windows.net/test2/config1581628398301?sp=r&st=2020-02-17T20:51:18Z&se=2020-02-18T04:51:18Z&spr=https&sv=2019-02-02&sr=b&sig=8SN%2BCTir6r6LjqzBFh6SZT3cDtZTFYCAxOSuwwADJ3g%3D"}'
-                download = '{vpnSites: '+str(res2)+', outputBlobSasUrl:"https://config1581627241639.blob.core.windows.net/test2/config1581628398301?sp=r&st=2020-02-17T20:51:18Z&se=2020-02-18T04:51:18Z&spr=https&sv=2019-02-02&sr=b&sig=8SN%2BCTir6r6LjqzBFh6SZT3cDtZTFYCAxOSuwwADJ3g%3D"}'
+                # making res3 to change single quotes to double quotes
+
+                res3 = str(res2).replace("'", '"')
 
 
-                response = requests.post('https://management.azure.com/subscriptions/fba9b1df-d1b9-4fd7-8253-030be28fcf8b/resourceGroups/MitchellvMX/providers/Microsoft.Network/virtualWans/vWANstandard/vpnConfiguration?api-version=2019-11-01', headers=headers,  data=download)
+                # {"vpnSites": ["/subscriptions/subid/resourceGroups/rg1/providers/Microsoft.Network/vpnSites/abc"],"outputBlobSasUrl": "https://blobcortextesturl.blob.core.windows.net/folderforconfig/vpnFile?sp=rw&se=2018-01-10T03%3A42%3A04Z&sv=2017-04-17&sig=WvXrT5bDmDFfgHs%2Brz%2BjAu123eRCNE9BO0eQYcPDT7pY%3D&sr=b"}
+
+
+                download = '{"vpnSites": '+str(res3)+', "outputBlobSasUrl":"'+outputblobsasurl2+'"}'
+                print(str(download))
+                print("look up")
+
+
+                response = requests.post('https://management.azure.com/subscriptions/'+subscriprion+'/resourceGroups/MitchellvMX/providers/Microsoft.Network/virtualWans/vWANstandard/vpnConfiguration?api-version=2019-11-01', headers=headers,  data=str(download))
 
                 print(response)
 
                 # reading from container to fetch VPN configuration file
 
-                getcontainer = json.loads(requests.get('https://config1581627241639.blob.core.windows.net/$bloburl').content)
+
+                getcontainer = json.loads(requests.get('https://config1581627241639.blob.core.windows.net/test2/config99999x').content)
 
                 vpncontainer = list(map(itemgetter('vpnSiteConnections'), getcontainer))
                 gwvpnconfig = list(map(itemgetter('gatewayConfiguration'),vpncontainer[0]))
@@ -237,8 +251,18 @@ for i in tagsnetwork:
                 print("gw")
                 print(az_addressspace)
 
-                #updating the Meraki VPN config
+                # now we need function to read through blob and get instance 0
 
+                azvpnconfig2 = json.loads(requests.get(outputblobsasurl2).content)
+
+                azpubip2 = []
+
+                for d in azvpnconfig2:
+                    if d['vpnSiteConfiguration']['Name'] == netname2:
+                        pubazpub = d['vpnSiteConnections'][0]['gatewayConfiguration']['IpAddresses']['Instance0']
+                        azpubip2.append(pubazpub)
+
+                #updating the Meraki VPN config
                 specifictag = re.findall(r'[v]+[W]+[A]+[N]+[-]+[0-999]', str(nettag))
 
                 putdata1 = '{"name":"MicrosoftvWAN","publicIp":"192.0.0.0","privateSubnets":["0.0.0.0/0"],"secret":"meraki123","ipsecPoliciesPreset":"azure", "networkTags":"west"}'
@@ -252,6 +276,6 @@ for i in tagsnetwork:
 vpndata = str(merakivpns)
 data22 = vpndata.replace("'", "")
 finaldata = ("{\"peers\":" + data22 + "}")
-updatevpn1 = requests.put('https://api.meraki.com/api/v0/organizations/$enterorgID/thirdPartyVPNPeers.json', data=finaldata, headers=header)
+updatevpn1 = requests.put('https://api.meraki.com/api/v0/organizations/'+orgid+'/thirdPartyVPNPeers.json', data=finaldata, headers=header)
 
 print(branchsubnets)
