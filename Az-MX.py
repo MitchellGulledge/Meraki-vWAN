@@ -18,6 +18,10 @@ from datetime import datetime, timedelta
 Below is a list of all the necessary Meraki and Azure credentials
 '''
 
+'''
+Authors: Mitchell Gulledge
+'''
+
 # Meraki credentials are placed below
 meraki_config = {
 	'api_key': "",
