@@ -32,7 +32,7 @@ azure_config = {
 	'client_id': "",
 	'client_secret': "",
 	'subscription_id': "",
-	'vwan_name': "MooCorp-VWAN",
+	'vwan_name': "",
 	'vwan_hub_name': "",
 	'storage_account_name': "",
 	'storage_account_container': "",
@@ -65,7 +65,7 @@ def siteConfig(location, vwanID, addressPrefixes, site_name, wans):
 									"ipAddress": wans['wan1']['ipaddress'],
 									"linkProperties": {
 										"linkProviderName": wans['wan1']['isp'],
-										"linkSpeedInMbps": 1000
+										"linkSpeedInMbps": 1000 # This will be updated with the port variable calculated below
 									}
 								}
 							}, {
@@ -74,7 +74,7 @@ def siteConfig(location, vwanID, addressPrefixes, site_name, wans):
 									"ipAddress": wans['wan2']['ipaddress'],
 									"linkProperties": {
 										"linkProviderName": wans['wan2']['isp'],
-										"linkSpeedInMbps": 1000
+										"linkSpeedInMbps": 1000 # This will be updated with the port variable calculated below
 									}
 								}
 							}
@@ -296,41 +296,47 @@ for i in tagsnetwork:
 
         print(branches)
 
-		# If the site has two uplinks; create and update vwan site with data in API call to contain two links
-		if secondaryuplinkindicator == 'True':
-			wans = {'wan1': {'ipaddress': pubs, 'isp': localsp},
-					'wan2': {'ipaddress': pubssec, 'isp': secisp}}
-		else:			
-			wans = {'wan1': {'ipaddress': pubs, 'isp': localsp}}
+        netname2 = netname.replace(' ', '')
 
-		site_config = siteConfig(vwan_hub_info['location'], virtualWAN['id'], str(privsub)[1:-1], netname2, wans)
+
+		# If the site has two uplinks; create and update vwan site with data in API call to contain two links
+        if secondaryuplinkindicator == 'True':
+            wans = {'wan1': {'ipaddress': pubs, 'isp': localsp},
+                    'wan2': {'ipaddress': pubssec, 'isp': secisp}}
+        else:			
+            wans = {'wan1': {'ipaddress': pubs, 'isp': localsp}}
+
+        privsubnoquptes = privsub.replace("'", "")
+        print(privsubnoquptes)
+
+        site_config = siteConfig(vwan_hub_info['location'], virtualWAN['id'], privsubnoquptes, netname2, wans) # here we are parsing private subnets wrong
 
 		# Create/Update the vWAN Site + Site Links
-		vwan_site_endpoint = "https://management.azure.com/subscriptions/" + \
+        vwan_site_endpoint = "https://management.azure.com/subscriptions/" + \
 								azure_config['subscription_id'] + "/resourceGroups/" + \
 								virtualWAN['resourceGroup'] + \
 								"/providers/Microsoft.Network/vpnSites/"
 
-		vwan_site_status = requests.put(
-				vwan_site_endpoint + "/" + netname2 + "?api-version=2019-12-01",
-				headers={'Authorization': 'Bearer ' + result['access_token']}, json=site_config)
+        vwan_site_status = requests.put(
+                vwan_site_endpoint + "/" + netname2 + "?api-version=2019-12-01",
+                headers={'Authorization': 'Bearer ' + result['access_token']}, json=site_config)
 
-		if (vwan_site_status.status_code < 200 and vwan_site_status.status_code > 202):
-			print("Failed adding/updating vWAN site")
-			print(vwan_site_status.text)
-			exit()
+        if (vwan_site_status.status_code < 200 and vwan_site_status.status_code > 202):
+            print("Failed adding/updating vWAN site")
+            print(vwan_site_status.text)
+            exit()
 
-		print(json.dumps(vwan_site_status.json(), indent=2))
+        print(json.dumps(vwan_site_status.json(), indent=2))
 
 		#######################################
 		# Connect Site Link to VWAN Hub
 		#######################################
 
 		# Connection configuration
-		vwan_vpn_site_id = "/subscriptions/" + \
-						   azure_config["subscription_id"] + "/resourceGroups/" + \
-						   virtualWAN["resourceGroup"] + "/providers/Microsoft.Network/vpnSites/" + netname2
-		connection_config = {
+        vwan_vpn_site_id = "/subscriptions/" + \
+                            azure_config["subscription_id"] + "/resourceGroups/" + \
+                            virtualWAN["resourceGroup"] + "/providers/Microsoft.Network/vpnSites/" + netname2
+        connection_config = {
 			"properties": {
 				"remoteVpnSite": {
 					"id": vwan_vpn_site_id
@@ -368,22 +374,22 @@ for i in tagsnetwork:
 			}
 		}
 
-		vwan_vpnGateway_connection_endpoint = "https://management.azure.com/subscriptions/" + \
+        vwan_vpnGateway_connection_endpoint = "https://management.azure.com/subscriptions/" + \
 											  azure_config['subscription_id'] + "/resourceGroups/" + virtualWAN[
 												  'resourceGroup'] + \
 											  "/providers/Microsoft.Network/vpnGateways/" + vwan_hub_info[
 												  'vpnGatewayName'] + \
 											  "/vpnConnections/" + netname2 + "-connection"
-		vwan_hub_info = requests.put(
+        vwan_hub_info = requests.put(
 			vwan_vpnGateway_connection_endpoint + "/" + "?api-version=2020-03-01",
 			headers={'Authorization': 'Bearer ' + result['access_token']}, json=connection_config)
 
-		if (vwan_hub_info.status_code < 200 and vwan_hub_info.status_code > 202):
-			print("Failed creating Virtual WAN connection")
-			print(vwan_hub_info.text)
-			exit()
+        if (vwan_hub_info.status_code < 200 and vwan_hub_info.status_code > 202):
+            print("Failed creating Virtual WAN connection")
+            print(vwan_hub_info.text)
+            exit()
 
-		print(json.dumps(vwan_hub_info.json(), indent=2))
+        print(json.dumps(vwan_hub_info.json(), indent=2))
 
         # Get list of site configurations
         sites = []
@@ -398,7 +404,7 @@ for i in tagsnetwork:
         keys = requests.post(
             storage_endpoint + "listKeys?api-version=2019-06-01",
             headers={'Authorization': 'Bearer ' + result['access_token']}, ).json()
-
+        print(keys)
         storage_account_key = keys['keys'][0]['value']
 
         # Generate SAS URL
@@ -433,27 +439,26 @@ for i in tagsnetwork:
         #print(json.dumps(vwan_config_file, indent=2))
 
         # parsing the VPN config file for public IP of Instance 0
-        vwan_config_file2 = vwan_config_file[0]
+        vwan_config_file2 = vwan_config_file[1]
 
         print(vwan_config_file2['vpnSiteConfiguration']['Name'])
 
-        azpubip2 = []
+        azsubnets = vwan_config_file2['vpnSiteConnections'][0]['hubConfiguration']['ConnectedSubnets']
+        azinsprimary = vwan_config_file2['vpnSiteConnections'][0]['gatewayConfiguration']['IpAddresses']['Instance0']
+        azsubnets1 = json.dumps(azsubnets)[1:-1]
 
         specifictag = re.findall(r'[v]+[W]+[A]+[N]+[-]+[0-999]', str(nettag))
 
-        putdata1 = '{"name":"placeholder","publicIp":"192.0.0.0","privateSubnets":["0.0.0.0/0"],"secret":"meraki123", "ipsecPolicies":{"ikeCipherAlgo":["aes256"],"ikeAuthAlgo":["sha1"],"ikeDiffieHellmanGroup":["group2"],"ikeLifetime":28800,"childCipherAlgo":["aes256"],"childAuthAlgo":["sha1"],"childPfsGroup":["2"],"childLifetime":3600},"networkTags":["west"]}'
-        database = putdata1.replace("west", specifictag[0]) # right now this is wiping tags to none
-        updatedata = database.replace('192.0.0.0', "1.3.5.7")   # change variable to the Viptela Public IP
-        updatedata1 = updatedata.replace('placeholder' , netname)
-        addprivsub = updatedata1.replace("0.0.0.0/0", "0.0.0.0/0") # replace with az_addressspace1
-        addpsk = addprivsub.replace('meraki123', psk)
-        print(merakivpns)
-        newmerakivpns = merakivpns[0]
-        print(newmerakivpns)
-        print("concatanated data below") 
-        newmerakivpns.append(json.loads(addpsk))
-        print("new merakivpn below")
-        print(newmerakivpns)
+        # sample IPsec template config that is later replaced with corresponding Azure variables (PSK pub IP, lan IP etc)
+        putdata1 = '{"name":"placeholder","publicIp":"192.0.0.0","privateSubnets":["0.0.0.0/0"],"secret":"meraki123", "ipsecPolicies":{"ikeCipherAlgo":["aes256"],"ikeAuthAlgo":["sha1"],"ikeDiffieHellmanGroup":["group2"],"ikeLifetime":28800,"childCipherAlgo":["aes256"],"childAuthAlgo":["sha1"],"childPfsGroup":["group2"],"childLifetime":3600},"networkTags":["west"]}'
+        database = putdata1.replace("west", specifictag[0]) # applies specific tag from org overview page to ipsec config
+        updatedata = database.replace('192.0.0.0', azinsprimary)   # change variable to intance 0 IP
+        updatedata1 = updatedata.replace('placeholder' , netname) # replaces placeholder value with dashboard network name
+        addprivsub = updatedata1.replace("0.0.0.0/0", azsubnets[0]) # replace with instance 0 IP address
+        addpsk = addprivsub.replace('meraki123', psk) # replace with pre shared key variable generated above
+        newmerakivpns = merakivpns[0] 
+        newmerakivpns.append(json.loads(addpsk)) # appending new vpn config with original vpn config
+        print(json.dumps(newmerakivpns))
 
 # Final Call to Update Meraki VPN config with Parsed Blob from Azure 
 updatemvpn = mdashboard.organizations.updateOrganizationThirdPartyVPNPeers(
