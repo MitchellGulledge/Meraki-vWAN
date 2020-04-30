@@ -40,6 +40,7 @@ azure_config = {
     'storage_account_blob': ""
 }
 
+
 '''
 End user configurations for Azure
 '''
@@ -375,7 +376,7 @@ for i in tagsnetwork:
 		}
 
         vwan_vpnGateway_connection_endpoint = "https://management.azure.com/subscriptions/" + \
-												  azure_config['subscription_id'] + "/resourceGroups/" + virtualWAN[
+											  azure_config['subscription_id'] + "/resourceGroups/" + virtualWAN[
 												  'resourceGroup'] + \
 											  "/providers/Microsoft.Network/vpnGateways/" + vwan_hub_info[
 												  'vpnGatewayName'] + \
@@ -454,12 +455,19 @@ for i in tagsnetwork:
         database = putdata1.replace("west", specifictag[0]) # applies specific tag from org overview page to ipsec config
         updatedata = database.replace('192.0.0.0', azinsprimary)   # change variable to intance 0 IP
         updatedata1 = updatedata.replace('placeholder' , netname) # replaces placeholder value with dashboard network name
-        addprivsub = updatedata1.replace("0.0.0.0/0", azsubnets[0]) # replace with instance 0 IP address
+        addprivsub = updatedata1.replace("0.0.0.0/0", azsubnets[0]) # replace with azure private networks
         addpsk = addprivsub.replace('meraki123', psk) # replace with pre shared key variable generated above
-        newmerakivpns = merakivpns[0] 
-        newmerakivpns.append(json.loads(addpsk)) # appending new vpn config with original vpn config
-        print(json.dumps(newmerakivpns))
+        newmerakivpns = merakivpns[0]
 
+        found = 0
+        for site in merakivpns: # should be new meraki vpns variable
+            print(type(site))
+            for namesite in site:
+                if netname == namesite['name']:
+                    found = 1
+        if found == 0:
+            newmerakivpns.append(json.loads(addpsk)) # appending new vpn config with original vpn config
+        print(found)
 # Final Call to Update Meraki VPN config with Parsed Blob from Azure 
 updatemvpn = mdashboard.organizations.updateOrganizationThirdPartyVPNPeers(
     meraki_config['org_id'], merakivpns[0]
