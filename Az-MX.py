@@ -37,7 +37,7 @@ azure_config = {
 	'storage_account_name': "",
 	'storage_account_container': "",
 	'scope': ["https://management.azure.com/.default"],
-    	'storage_account_blob': ""
+    'storage_account_blob': ""
 }
 
 '''
@@ -375,7 +375,7 @@ for i in tagsnetwork:
 		}
 
         vwan_vpnGateway_connection_endpoint = "https://management.azure.com/subscriptions/" + \
-											  azure_config['subscription_id'] + "/resourceGroups/" + virtualWAN[
+												  azure_config['subscription_id'] + "/resourceGroups/" + virtualWAN[
 												  'resourceGroup'] + \
 											  "/providers/Microsoft.Network/vpnGateways/" + vwan_hub_info[
 												  'vpnGatewayName'] + \
