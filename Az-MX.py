@@ -40,7 +40,6 @@ azure_config = {
     'storage_account_blob': ""
 }
 
-
 '''
 End user configurations for Azure
 '''
@@ -437,27 +436,53 @@ for i in tagsnetwork:
             exit()
 
         # Show site configuration file
-        #print(json.dumps(vwan_config_file, indent=2))
+        print(json.dumps(vwan_config_file, indent=2))
 
-        # parsing the VPN config file for public IP of Instance 0
-        vwan_config_file2 = vwan_config_file[1]
+        # here we are going to try and correctly parse the vwan config file
+       
+        azureinstance0 = "192.0.2.1" # placeholder value
+        azureinstance1 = "192.0.2.2" # placeholder value
+        azureconnectedsubnets = ['1.1.1.1'] # placeholder value
+    
+        for element in vwan_config_file:
+            if element['vpnSiteConfiguration']['Name'] == 'DorothyHomeMX-DONOTTOUCH': # replace with netname2 variable for site name
+                print('Found your match')
+                ins0 = element['vpnSiteConnections'][0]['gatewayConfiguration']['IpAddresses']['Instance0'] # parses primary Azure IP
+                ins1 = element['vpnSiteConnections'][0]['gatewayConfiguration']['IpAddresses']['Instance1'] # parses backup Azure IP
+                consubnets = element['vpnSiteConnections'][0]['hubConfiguration']['ConnectedSubnets'] # Connected subnets in Azure
+                azureinstance0 = str(ins0)
+                azureinstance1 = str(ins1)
+                azureconnectedsubnets = consubnets
 
-        print(vwan_config_file2['vpnSiteConfiguration']['Name'])
-
-        azsubnets = vwan_config_file2['vpnSiteConnections'][0]['hubConfiguration']['ConnectedSubnets']
-        azinsprimary = vwan_config_file2['vpnSiteConnections'][0]['gatewayConfiguration']['IpAddresses']['Instance0']
-        azsubnets1 = json.dumps(azsubnets)[1:-1]
+        print(azureinstance0)
+        print(azureinstance1)
+        print(azureconnectedsubnets)
+        print("look above")
 
         specifictag = re.findall(r'[v]+[W]+[A]+[N]+[-]+[0-999]', str(nettag))
+         
+        azconsubnets = json.dumps(azureconnectedsubnets)
 
         # sample IPsec template config that is later replaced with corresponding Azure variables (PSK pub IP, lan IP etc)
         putdata1 = '{"name":"placeholder","publicIp":"192.0.0.0","privateSubnets":["0.0.0.0/0"],"secret":"meraki123", "ipsecPolicies":{"ikeCipherAlgo":["aes256"],"ikeAuthAlgo":["sha1"],"ikeDiffieHellmanGroup":["group2"],"ikeLifetime":28800,"childCipherAlgo":["aes256"],"childAuthAlgo":["sha1"],"childPfsGroup":["group2"],"childLifetime":3600},"networkTags":["west"]}'
         database = putdata1.replace("west", specifictag[0]) # applies specific tag from org overview page to ipsec config
-        updatedata = database.replace('192.0.0.0', azinsprimary)   # change variable to intance 0 IP
+        updatedata = database.replace('192.0.0.0', azureinstance0)   # change variable to intance 0 IP
         updatedata1 = updatedata.replace('placeholder' , netname) # replaces placeholder value with dashboard network name
-        addprivsub = updatedata1.replace("0.0.0.0/0", azsubnets[0]) # replace with azure private networks
+        addprivsub = updatedata1.replace('["0.0.0.0/0"]', str(azconsubnets)) # replace with azure private networks
         addpsk = addprivsub.replace('meraki123', psk) # replace with pre shared key variable generated above
         newmerakivpns = merakivpns[0]
+        
+        # creating second data input to append instance 1 to the merakivpn list
+        
+        putdata2 = '{"name":"theplaceholder","publicIp":"192.1.0.0","privateSubnets":["0.0.0.0/1"],"secret":"meraki223", "ipsecPolicies":{"ikeCipherAlgo":["aes256"],"ikeAuthAlgo":["sha1"],"ikeDiffieHellmanGroup":["group2"],"ikeLifetime":28800,"childCipherAlgo":["aes256"],"childAuthAlgo":["sha1"],"childPfsGroup":["group2"],"childLifetime":3600},"networkTags":["east"]}'
+        
+        secondaryvpnname = str(netname2) + "-sec"
+        database2 = putdata2.replace("east", specifictag[0]) # applies specific tag from org overview page to ipsec config need to make this secondary
+        updatedata2 = database2.replace('192.1.0.0', azureinstance1)
+        updatedata3 = updatedata2.replace('theplaceholder' , secondaryvpnname) # replaces placeholder value with dashboard network name
+        addprivsub3 = updatedata3.replace('["0.0.0.0/1"]', str(azconsubnets)) # replace with azure private networks
+        addpsk2 = addprivsub3.replace('meraki223', psk) # replace with pre shared key variable generated above
+
 
         found = 0
         for site in merakivpns: # should be new meraki vpns variable
@@ -466,8 +491,12 @@ for i in tagsnetwork:
                 if netname == namesite['name']:
                     found = 1
         if found == 0:
+            print(type(addpsk))
+            #newmerakivpns.append(addpsk)    
             newmerakivpns.append(json.loads(addpsk)) # appending new vpn config with original vpn config
+            newmerakivpns.append(json.loads(addpsk2))
         print(found)
+
 # Final Call to Update Meraki VPN config with Parsed Blob from Azure 
 updatemvpn = mdashboard.organizations.updateOrganizationThirdPartyVPNPeers(
     meraki_config['org_id'], merakivpns[0]
