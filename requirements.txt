@@ -1,0 +1,6 @@
+--find-links wheelhouse
+meraki==0.110.3
+azure-storage-blob==12.3.1
+passwordgenerator==1.4
+ipwhois==1.1.0
+IPy==1.00

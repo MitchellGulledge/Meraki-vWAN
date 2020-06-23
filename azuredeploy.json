@@ -1,0 +1,242 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "functionAppName": {
+            "type": "string",
+            "defaultValue": "",
+            "minLength": 2,
+            "maxLength": 60,
+            "metadata": {
+                "description": "Specify the name of the function application (no special characters allowed)"
+            }
+        },
+        "ApplicationInsightsLocation": {
+            "type": "string",
+            "allowedValues": [
+                "Canada Central",                
+                "East US",
+                "East US 2",
+                "North Central US",
+                "South Central US",
+                "West US",
+                "West US 2",
+                "North Europe",
+                "West Europe",
+                "France Central",
+                "Central India",
+                "Japan East",
+                "Korea Central",
+                "Switzerland North",                
+                "UK South"
+            ],
+            "metadata": {
+                "description": "Specify the region for Application Insights data, which can be used for debugging."
+            }
+        },
+        "meraki_api_key": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "API Key to Meraki (can be found via the my profile page)"
+            }
+        },
+        "meraki_orgName": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Meraki organization name"
+            }
+        },
+        "vwan_name": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Name of the Virtual WAN resource Meraki should target"
+            }
+        },
+        "vwan_hub_name": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Name of the Virtual WAN hub the Meraki should establish connections to"
+            }
+        },
+        "storage_account_name": {
+            "type": "string",
+            "defaultValue": "",
+            "minLength": 3,
+            "maxLength": 24,
+            "metadata": {
+                "description": "Storage account name used to temporary storage Virtual WAN configuration data"
+            }
+        },
+        "storage_account_container": {
+            "type": "string",
+            "defaultValue": "vpnconfig",
+            "metadata": {
+                "description": "Storage account container where Virtual WAN configuration will be written to"
+            }
+        },
+        "storage_account_blob": {
+            "type": "string",
+            "defaultValue": "vpnconfig",
+            "metadata": {
+                "description": "Name of the Virtual WAN configuration blob that will be written to an Azure Storage Account"
+            }
+        },
+        "use_maintenance_window": {
+            "type": "string",
+            "defaultValue": "Yes",
+            "allowedValues": ["Yes","No"],
+            "metadata": {
+                "description": "Do you want to postpone changes needed to the IPSec tunnels during maintenance hours?  Note: Automation failover will continue, this feature is specific to changes needed for the IPSec profile on the Meraki device."
+            }
+        },
+        "maintenance_time_in_utc": {
+            "type": "string",
+            "defaultValue": "1",
+            "allowedValues": ["0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23"],
+            "metadata": {
+                "description": "Specify what hour of the day the automation script should make changes to your IPSec tunnels in UTC."
+            }
+        }
+    },
+    "variables": {
+        "hostingPlanName": "[parameters('functionAppName')]",
+        "storageAccountName": "[concat('storage', uniquestring(resourceGroup().id))]",
+        "functionPackage": "https://github.com/MitchellGulledge/Meraki-vWAN/raw/master/MerakiFunction.zip"
+    },
+    "resources": [
+        {
+            "name": "[parameters('functionAppName')]",
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2018-11-01",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp,linux",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms/', variables('hostingPlanName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+                "[resourceId('microsoft.insights/components/', parameters('functionAppName'))]"
+            ],
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "siteConfig": {
+                    "appSettings": [                        
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(resourceId('microsoft.insights/components/', parameters('functionAppName')), '2018-05-01-preview').InstrumentationKey]"
+                        },
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageAccountName'),';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2017-06-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~3"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "python"
+                        },
+                        {
+                            "name": "WEBSITE_RUN_FROM_PACKAGE",
+                            "value": "[variables('functionPackage')]"
+                        },
+                        {
+                            "name": "meraki_api_key",
+                            "value": "[parameters('meraki_api_key')]"
+                        },
+                        {
+                            "name": "meraki_orgName",
+                            "value": "[parameters('meraki_orgName')]"
+                        },
+                        {
+                            "name": "storage_account_blob",
+                            "value": "[parameters('storage_account_blob')]"
+                        },
+                        {
+                            "name": "storage_account_container",
+                            "value": "[parameters('storage_account_container')]"
+                        },
+                        {
+                            "name": "storage_account_name",
+                            "value": "[toLower(parameters('storage_account_name'))]"
+                        },
+                        {
+                            "name": "subscription_id",
+                            "value": "[subscription().subscriptionId]"
+                        },
+                        {
+                            "name": "vwan_hub_name",
+                            "value": "[parameters('vwan_hub_name')]"
+                        },
+                        {
+                            "name": "vwan_name",
+                            "value": "[parameters('vwan_name')]"
+                        },
+                        {
+                            "name": "use_maintenance_window",
+                            "value": "[parameters('use_maintenance_window')]"
+                        },
+                        {
+                            "name": "maintenance_time_in_utc",
+                            "value": "[parameters('maintenance_time_in_utc')]"
+                        }
+                    ],
+                    "LinuxFxVersion": "PYTHON|3.8"
+                },                
+                "name": "[parameters('functionAppName')]",
+                "clientAffinityEnabled": false,
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms/', variables('hostingPlanName'))]"
+            }            
+        },
+        {
+            "apiVersion": "2018-11-01",
+            "name": "[variables('hostingPlanName')]",
+            "type": "Microsoft.Web/serverfarms",
+            "location": "[resourceGroup().location]",
+            "kind": "linux",
+            "tags": null,
+            "dependsOn": [],
+            "properties": {
+                "name": "[variables('hostingPlanName')]",
+                "workerSize": 0,
+                "workerSizeId": 0,
+                "numberOfWorkers": 1,
+                "reserved": true
+            },
+            "sku": {
+                "Tier": "Dynamic",
+                "Name": "Y1",
+                "family": "Y",
+                "capacity": 0
+            }
+        },
+        {
+            "apiVersion": "2019-06-01",
+            "type": "Microsoft.Storage/storageAccounts",
+            "name": "[variables('storageAccountName')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "properties": {
+                "supportsHttpsTrafficOnly": true
+            }
+        },
+        {
+            "apiVersion": "2018-05-01-preview",
+            "name": "[parameters('functionAppName')]",
+            "type": "Microsoft.Insights/components",
+            "location": "[parameters('ApplicationInsightsLocation')]",
+            "properties": {
+                "ApplicationId": "[parameters('functionAppName')]"
+            }
+        }
+    ],
+    "outputs": {
+    }
+}
