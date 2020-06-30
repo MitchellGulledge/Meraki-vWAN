@@ -1,244 +1,493 @@
-from azure.storage.blob import BlobSasPermissions, generate_blob_sas
-import requests
+import datetime as dt
 import json
+import logging
+import os
+import re
+import sys
 import time
-import meraki
+import urllib.request
+from datetime import datetime, timedelta
 from io import BytesIO
 from operator import itemgetter
-from passwordgenerator import pwgenerator
-import logging
-import re
-import urllib.request
-import os
-import sys
-import datetime as dt
-from ipwhois import IPWhois
-from datetime import datetime, timedelta
-from IPy import IP
+
 import azure.functions as func
+import meraki
+import requests
+from IPy import IP
+from azure.storage.blob import BlobSasPermissions, generate_blob_sas
+from ipwhois import IPWhois
+from passwordgenerator import pwgenerator
 
-def main(MerakiTimer: func.TimerRequest) -> None:    
-    startTime = dt.datetime.utcnow()    
-    utc_timestamp = startTime.replace(tzinfo=dt.timezone.utc).isoformat()
+_AZURE_MGMT_URL = "https://management.azure.com"
+_BLOB_HOST_URL = "blob.core.windows.net"
+_YES = "Yes"
+_NO = "No"
+_VWAN_APPLY_NOW_TAG = 'vwan-apply-now'
 
-    logging.info('Python timer trigger function ran at %s', utc_timestamp)
-    logging.info('Python version: %s', sys.version)
 
-    '''
-    Below is a list of all the necessary Meraki credentials
-    '''
+def _get_microsoft_network_base_url(mgmt_url, sub_id, rg_name=None, provider="Microsoft.Network"):
+    if rg_name:
+        return "{0}/subscriptions/{1}/resourceGroups/{2}/providers/{3}".format(mgmt_url, sub_id, rg_name, provider)
+    return "{0}/subscriptions/{1}/providers/{2}".format(mgmt_url, sub_id, provider)
 
-    # Meraki credentials are placed below
-    meraki_config = {
-        'api_key': os.environ["meraki_api_key"],
-        'orgName': os.environ["meraki_orgName"],
-        'use_maintenance_window': os.environ["use_maintenance_window"],
-        'maintenance_time_in_utc': os.environ["maintenance_time_in_utc"]
+
+def get_bearer_token(resource_uri):
+    access_token = None
+    try:
+        identity_endpoint = os.environ['IDENTITY_ENDPOINT']
+        identity_header = os.environ['IDENTITY_HEADER']
+    except:
+        logging.error("Could not obtain authentication token for Azure. Please ensure "
+                      "System Assigned identities have been enabled on the Azure Function.")
+        return None
+
+    token_auth_uri = f"{identity_endpoint}?resource={resource_uri}&api-version=2017-09-01"
+    head_msi = {'secret': identity_header}
+    try:
+        resp = requests.get(token_auth_uri, headers=head_msi)
+        access_token = resp.json()['access_token']
+    except Exception as e:
+        logging.error("Could not obtain access token to manage other Azure resources.")
+        logging.debug(e)
+
+    return access_token
+
+
+def get_site_config(location, vwan_id, address_prefixes, site_name, wans):
+    vpn_site_links = [{
+        "name": site_name + "-wan1",
+        "properties": {
+            "ipAddress": wans['wan1']['ipaddress'],
+            "linkProperties": {
+                "linkProviderName": wans['wan1']['isp'],
+                "linkSpeedInMbps": int(float(wans['wan1']['linkspeed']))
+            }
+        }
+    }]
+
+    if 'wan2' in wans:
+        vpn_site_links.append({
+            "name": site_name + "-wan2",
+            "properties": {
+                "ipAddress": wans['wan2']['ipaddress'],
+                "linkProperties": {
+                    "linkProviderName": wans['wan2']['isp'],
+                    "linkSpeedInMbps": int(float(wans['wan2']['linkspeed']))
+                }
+            }
+        }
+        )
+
+    site_config = {
+        "tags": {},
+        "location": location,
+        "properties": {
+            "virtualWan": {
+                "id": vwan_id
+            },
+            "addressSpace": {
+                "addressPrefixes": address_prefixes
+            },
+            "isSecuritySite": False,
+            "vpnSiteLinks": vpn_site_links
+        }
     }
+    return site_config
 
-    '''
-    Below is a list of all the necessary Azure credentials
-    '''
-    azure_config = {
-        'subscription_id': os.environ["subscription_id"],
-        'vwan_name': os.environ["vwan_name"],
-        'vwan_hub_name': os.environ["vwan_hub_name"],
-        'storage_account_name': os.environ["storage_account_name"],
-        'storage_account_container': os.environ["storage_account_container"],
-        'storage_account_blob': os.environ["storage_account_blob"]
+
+def get_site_link_config(name, wan, vwan_vpn_site_id, linkspeed, psk):
+    site_link_config = {
+        "name": f"{name}-{wan}",
+        "properties": {
+            "vpnSiteLink": {
+                "id": f"{vwan_vpn_site_id}/vpnSiteLinks/{name}-{wan}"
+            },
+            "connectionBandwidth": int(float(linkspeed)),
+            "ipsecPolicies": [
+                {
+                    "saLifeTimeSeconds": 3600,
+                    "ipsecEncryption": "AES256",
+                    "ipsecIntegrity": "SHA256",
+                    "ikeEncryption": "AES256",
+                    "ikeIntegrity": "SHA256",
+                    "dhGroup": "DHGroup14",
+                    "pfsGroup": "None"
+                }
+            ],
+            "vpnConnectionProtocolType": "IKEv2",
+            "sharedKey": psk,
+            "enableBgp": False,
+            "enableRateLimiting": False,
+            "useLocalAzureIpAddress": False,
+            "usePolicyBasedTrafficSelectors": False,
+            "routingWeight": 0
+        }
     }
+    return site_link_config
 
-    '''
-    End user configurations
-    '''
 
-    identity_endpoint = os.environ["IDENTITY_ENDPOINT"]
-    identity_header = os.environ["IDENTITY_HEADER"]
+def get_meraki_ipsec_config(name, public_ip, private_subnets, secret, network_tags) -> dict:
+    ipsec_config = {
+        "name": name,
+        "ikeVersion": "2",
+        "publicIp": public_ip,
+        "privateSubnets": private_subnets,
+        "secret": secret,
+        "ipsecPolicies": {
+            "ikeCipherAlgo": ["aes256"],
+            "ikeAuthAlgo": ["sha256"],
+            "ikeDiffieHellmanGroup": ["group14"],
+            "ikeLifetime": 28800,
+            "childCipherAlgo": ["aes256"],
+            "childAuthAlgo": ["sha256"],
+            "childPfsGroup": ["group14"],
+            "childLifetime": 3600
+        },
+        "networkTags": network_tags
+    }
+    return ipsec_config
 
-    def get_bearer_token(resource_uri):
-        token_auth_uri = f"{identity_endpoint}?resource={resource_uri}&api-version=2017-09-01"
-        head_msi = {'secret':identity_header}
-        try:
-            resp = requests.get(token_auth_uri, headers=head_msi)
-            access_token = resp.json()['access_token']
-        except Exception as e:
-            logging.error("Could not obtain access token to manage other Azure resources.")
-            logging.debug(e)
 
-        return access_token
+def get_meraki_networks_by_tag(tag_name, networks):
+    remove_network_id_list = []
+    for network in networks:
+        if tag_name in str(network['tags']):
+            # appending network id variable to list of network ids
+            remove_network_id_list.append(network['id'])
+    return remove_network_id_list
 
-    def siteConfig(location, vwanID, addressPrefixes, site_name, wans):
-        vpnSiteLinks = [{
-                                    "name": site_name + "-wan1",
-                                    "properties": {
-                                        "ipAddress": wans['wan1']['ipaddress'],
-                                        "linkProperties": {
-                                            "linkProviderName": wans['wan1']['isp'],
-                                            "linkSpeedInMbps": int(float(wans['wan1']['linkspeed']))
-                                        }
-                                    }
-                                }]
 
-        if 'wan2' in wans:
-            vpnSiteLinks.append( {
-                                    "name": site_name + "-wan2",
-                                    "properties": {
-                                        "ipAddress": wans['wan2']['ipaddress'],
-                                        "linkProperties": {
-                                            "linkProviderName": wans['wan2']['isp'],
-                                            "linkSpeedInMbps": int(float(wans['wan2']['linkspeed']))
-                                        }
-                                    }
-                                }
-            )
+def clean_meraki_vwan_tags(mdashboard, remove_tag, tagged_networks):
+    for network in tagged_networks:
+        if remove_tag in str(network['tags']):
+            new_tag_list = network['tags'].replace(remove_tag, '')
+            mdashboard.networks.updateNetwork(network['id'], tags=new_tag_list)
+    return
 
-        site_config = {"tags": { },
-                        "location": location,
-                        "properties": {
-                            "virtualWan": {
-                                "id": vwanID
-                            },
-                            "addressSpace": {
-                                "addressPrefixes": addressPrefixes                                
-                            },
-                            "isSecuritySite": False,
-                            "vpnSiteLinks": vpnSiteLinks                
-                        }
-                    }
-        return site_config
 
-    # obtain org ID via linking ORG name
-    mdashboard = meraki.DashboardAPI(meraki_config['api_key'])
-    result_org_id = mdashboard.organizations.getOrganizations()
-    for x in result_org_id:
-        if x['name'] == meraki_config['orgName']:
-            meraki_config['org_id'] = x['id']
-
-    if not 'org_id' in meraki_config:
-        logging.error("Could not find Meraki Organization Name.")
-        return
-
-    # Check if any changes have been made to the Meraki configuration
-    change_log = mdashboard.change_log.getOrganizationConfigurationChanges(meraki_config['org_id'],total_pages=1, timespan=300)  
-    dashboard_config_change_ts = False
-    for tag_events in change_log:
-        if tag_events['label'] == 'Network tags':
-            dashboard_config_change_ts = True
-
-    if(dashboard_config_change_ts == False and MerakiTimer.past_due == False):
-        logging.info("No changes in the past 5 minutes have been detected. No updates needed.")
-        return
-
-    # Get access token to authenticate to Azure
-    access_token = get_bearer_token("https://management.azure.com/")
-    
-    # Get list of VWANs
-    virtualWANs_request = requests.get("https://management.azure.com/subscriptions/" + azure_config[
-        'subscription_id'] + "/providers/Microsoft.Network/virtualWans?api-version=2019-12-01",
-                            headers={'Authorization': 'Bearer ' + access_token}, )
-
-    if (virtualWANs_request.status_code != 200):
-        logging.error("Cannot find vWAN resource.  Please make sure you have delegated access in the Azure portal for this script to have access to your Azure subscription.")
-        logging.debug(virtualWANs_request.text)
-        return
-
-    virtualWANs = virtualWANs_request.json()
-
-    # Find virtual wan instance
-    virtualWAN = None
-    for vwan in virtualWANs['value']:
-        if vwan['name'] == azure_config['vwan_name']:
-            virtualWAN = vwan
-            virtualWAN['resourceGroup'] = re.search(
-                'resourceGroups/(.*)/providers', virtualWAN['id']).group(1)
+def find_azure_virtual_wan(virtual_wan_name, virtual_wans):
+    virtual_wan = None
+    for vwan in virtual_wans['value']:
+        if vwan['name'] == virtual_wan_name:
+            virtual_wan = vwan
+            virtual_wan['resourceGroup'] = re.search(r'resourceGroups/(.*)/providers', virtual_wan['id']).group(1)
             break
 
-    if virtualWAN is None:
-        logging.error("Could not find vWAN instance...")
-        return
+    return virtual_wan
 
-    # Get VWAN Hub Info
-    vwan_hub_endpoint = "https://management.azure.com/subscriptions/" + \
-                        azure_config['subscription_id'] + "/resourceGroups/" + virtualWAN['resourceGroup'] + \
-                        "/providers/Microsoft.Network/virtualHubs/" + azure_config['vwan_hub_name']
-    vwan_hub_info = requests.get(
-        vwan_hub_endpoint + "/" + "?api-version=2020-03-01",
-        headers={'Authorization': 'Bearer ' + access_token})
 
-    if (vwan_hub_info.status_code != 200):
+def get_whois_info(public_ip):
+    obj = IPWhois(public_ip)
+    res = obj.lookup_whois()
+    whois_info = res["nets"][0]['name']
+    return whois_info
+
+
+def get_azure_virtual_wans(header_with_bearer_token):
+    endpoint_url = _get_microsoft_network_base_url(_AZURE_MGMT_URL,
+                                                   AzureConfig.subscription_id) + "/virtualWans?api-version=2019-12-01"
+    virtual_wans_request = requests.get(endpoint_url, headers=header_with_bearer_token)
+
+    if virtual_wans_request.status_code != 200:
+        logging.error(
+                "Cannot find vWAN resource.  Please make sure you have delegated access in the Azure portal for this "
+                "script to have access to your Azure subscription.")
+        logging.debug(virtual_wans_request.text)
+        return None
+
+    return virtual_wans_request.json()
+
+
+def get_azure_virtual_wan_hub_info(resource_group, header_with_bearer_token):
+    vwan_hub_endpoint = _get_microsoft_network_base_url(_AZURE_MGMT_URL, AzureConfig.subscription_id, resource_group)\
+                        + f"/virtualHubs/{AzureConfig.vwan_hub_name}?api-version=2020-03-01"
+    vwan_hub_info = requests.get(vwan_hub_endpoint, headers=header_with_bearer_token)
+
+    if vwan_hub_info.status_code != 200:
         logging.error("Cannot find vWAN Hub")
-        logging.debug(vwan_hub_info.text)
-        return
+        logging.debug(f"Cannot find vWAN Hub {vwan_hub_info.text}")
+        return None
 
     vwan_hub_info = vwan_hub_info.json()
     vwan_hub_info['vpnGatewayName'] = vwan_hub_info['properties']['vpnGateway']['id'].rpartition('/')[2]
 
+    return vwan_hub_info
+
+
+def get_azure_virtual_wan_config(virtual_wan_id, sites, sas_url, header_with_bearer_token):
     # Build root URL for VWAN Calls
-    vwan_endpoint = "https://management.azure.com" + virtualWAN['id']
+    vwan_endpoint = _AZURE_MGMT_URL + f"{virtual_wan_id}/vpnConfiguration?api-version=2020-04-01"
 
-    # Generate random password for site to site VPN config
-    psk = pwgenerator.generate()
+    # Write site configuration file to blob storage
+    vwan_site_config = requests.post(vwan_endpoint, headers=header_with_bearer_token,
+                                     json={'vpnSites': sites, 'outputBlobSasUrl': sas_url})
 
-    # branch subnets is a variable to display local branch site info
-    branchsubnets = []
-    # variable with new and existing s2s VPN config
-    merakivpns = []
+    if vwan_site_config.status_code != 202:
+        logging.error("Could not get blob configuration")
+        logging.debug(vwan_site_config.text)
+        return None
 
-    # performing initial get to obtain all Meraki existing VPN info to add to merakivpns list above
-    originalvpn = mdashboard.organizations.getOrganizationThirdPartyVPNPeers(
-        meraki_config['org_id']
-    )
-    merakivpns.append(originalvpn)
+    try:
+        with urllib.request.urlopen(sas_url) as url:
+            vwan_config_file = json.loads(url.read().decode())
+    except Exception as e:
+        logging.error("Could not download config")
+        logging.debug(e)
+        return None
+
+    return vwan_config_file
+
+
+def update_azure_virtual_wan_site_links(resource_group, site_name, header_with_bearer_token, site_config):
+    vwan_site_endpoint = _get_microsoft_network_base_url(_AZURE_MGMT_URL, AzureConfig.subscription_id,
+                                                         resource_group) + \
+                         f"/vpnSites/{site_name}?api-version=2019-12-01"
+
+    vwan_site_status = requests.put(vwan_site_endpoint, headers=header_with_bearer_token, json=site_config)
+
+    if vwan_site_status.status_code < 200 or vwan_site_status.status_code > 202:
+        logging.error("Failed adding/updating vWAN site")
+        logging.debug(vwan_site_status.text)
+        return None
+
+    return vwan_site_status.json()
+
+
+def get_azure_storage_keys(resource_group, account_name, header_with_bearer_token):
+    storage_endpoint = _get_microsoft_network_base_url(_AZURE_MGMT_URL, AzureConfig.subscription_id,
+                                                       resource_group, "Microsoft.Storage") + \
+                       f"/storageAccounts/{account_name}/listKeys?api-version=2019-06-01"
+    keys_request = requests.post(storage_endpoint, headers=header_with_bearer_token)
+
+    if keys_request.status_code != 200:
+        logging.error("Failed getting storage account keys to write VWAN configuration")
+        logging.debug(keys_request.text)
+        return None
+
+    return keys_request.json()
+
+
+def generate_azure_storage_sas_url(storage_account_name: str, storage_account_container: str, storage_account_blob: str,
+                                   storage_account_key: str, permissions: dict = None) -> str:
+    if permissions is None:
+        permissions = {"read": True, "add": False, "create": False, "write": True}
+
+    blob_permissions = BlobSasPermissions(read=permissions['read'], add=permissions['add'],
+                                          create=permissions['create'], write=permissions['write'])
+    sas_url = 'https://{0}.{1}/{2}/{3}?{4}'.format(storage_account_name,
+                                                   _BLOB_HOST_URL,
+                                                   storage_account_container,
+                                                   storage_account_blob,
+                                                   generate_blob_sas(storage_account_name,
+                                                                     storage_account_container,
+                                                                     storage_account_blob,
+                                                                     snapshot=None,
+                                                                     account_key=storage_account_key,
+                                                                     user_delegation_key=None,
+                                                                     permission=blob_permissions,
+                                                                     expiry=datetime.utcnow() + timedelta(hours=1),
+                                                                     start=datetime.utcnow(),
+                                                                     policy_id=None, ip=None))
+    return sas_url
+
+
+def create_azure_storage_container(resource_group, account_name, container_name, header_with_bearer_token):
+    storage_container_endpoint = _get_microsoft_network_base_url(_AZURE_MGMT_URL, AzureConfig.subscription_id,
+                                                                 resource_group, "Microsoft.Storage") + \
+                                 f"/storageAccounts/{account_name}/blobServices/default/containers/" + \
+                                 f"{container_name}?api-version=2019-06-01"
+
+    storage_container = requests.put(storage_container_endpoint, headers=header_with_bearer_token,
+                                                                 json={"properties": {"publicAccess": "None"}})
+
+    if storage_container.status_code < 200 or storage_container.status_code > 201:
+        logging.error(
+                "Could not ensure storage account container exists to write Virtual WAN configuration to blob storage.")
+        logging.debug(storage_container.text)
+        return False
+
+    return True
+
+
+def create_virtual_wan_connection(resource_group, vpn_gateway_name, network_name,
+                                  subscription_id, wans, psk, header_with_bearer_token):
+
+    vwan_vpn_site_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}" + \
+                                   f"/providers/Microsoft.Network/vpnSites/{network_name}"
+
+    vpn_site_links = []
+    for (wan, properties) in wans:
+        vpn_site_links.append(get_site_link_config(network_name, wan, vwan_vpn_site_id, properties['linkspeed'], psk))
+
+    connection_config = {
+                    "properties": {
+                        "remoteVpnSite": {
+                            "id": vwan_vpn_site_id
+                        },
+                        "vpnLinkConnections": vpn_site_links
+                    }
+                }
+
+    vwan_vpn_gateway_connection_endpoint = _get_microsoft_network_base_url(_AZURE_MGMT_URL,
+                                                                           AzureConfig.subscription_id,
+                                                                           resource_group) + "/vpnGateways" \
+                                                                                             f"/{vpn_gateway_name}/" \
+                                                                                             "vpnConnections" \
+                                                                                             f"/{network_name}-" \
+                                                                                             "connection?" \
+                                                                                             "api-version=2020-03-01"
+    vwan_connection_info = requests.put(vwan_vpn_gateway_connection_endpoint,
+                                        headers=header_with_bearer_token,
+                                        json=connection_config)
+
+    if vwan_connection_info.status_code < 200 or vwan_connection_info.status_code > 202:
+        logging.error("Failed creating Virtual WAN connection")
+        logging.debug(vwan_connection_info.text)
+        return None
+
+    return vwan_connection_info.json()
+
+
+class MerakiConfig:
+    api_key = os.environ['meraki_api_key']
+    org_name = os.environ['meraki_org_name']
+    use_maintenance_window = os.environ['use_maintenance_window']
+    maintenance_time_in_utc = int(os.environ['maintenance_time_in_utc'])
+    org_id = None
+
+
+class AzureConfig:
+    subscription_id = os.environ['subscription_id']
+    vwan_name = os.environ['vwan_name']
+    vwan_hub_name = os.environ['vwan_hub_name']
+    storage_account_name = os.environ['storage_account_name']
+    storage_account_container = os.environ['storage_account_container']
+    storage_account_blob = os.environ['storage_account_blob']
+
+
+def main(MerakiTimer: func.TimerRequest) -> None:
+    start_time = dt.datetime.utcnow()
+    utc_timestamp = start_time.replace(tzinfo=dt.timezone.utc).isoformat()
+
+    logging.info('Python timer trigger function ran at %s', utc_timestamp)
+    logging.info('Python version: %s', sys.version)
+
+    # obtain org ID via linking ORG name
+    mdashboard = meraki.DashboardAPI(MerakiConfig.api_key)
+    result_org_id = mdashboard.organizations.getOrganizations()
+    for x in result_org_id:
+        if x['name'] == MerakiConfig.org_name:
+            MerakiConfig.org_id = x['id']
+
+    if not MerakiConfig.org_id:
+        logging.error("Could not find Meraki Organization Name.")
+        return
+
+    # Check if any changes have been made to the Meraki configuration
+    change_log = mdashboard.change_log.getOrganizationConfigurationChanges(MerakiConfig.org_id, total_pages=1,
+                                                                           timespan=300)
+    dashboard_config_change_ts = False
+    for tag_events in change_log:
+        if tag_events['label'] == 'Network tags' or tag_events['label'] == 'VPN subnets':
+            dashboard_config_change_ts = True
+
+    # If no maintenance mode, check if changes were made in last 5 minutes or if script has not been run within 5 minutes; check for updates
+    if dashboard_config_change_ts is False and MerakiTimer.past_due is False and MerakiConfig.use_maintenance_window == _NO:
+        logging.info("No changes in the past 5 minutes have been detected. No updates needed.")
+        return
 
     # Meraki call to obtain Network information
-    tagsnetwork = mdashboard.networks.getOrganizationNetworks(meraki_config['org_id'])
+    tags_network = mdashboard.networks.getOrganizationNetworks(MerakiConfig.org_id)
 
     # Check if we should force changes even if during maintenance window
-    # creating list of network IDs that can later be referenced to remove the apply now tag once the script has executed  
-    remove_network_id_list = []  
-    for apply_now_tag in tagsnetwork:  
-        if "vwan-apply-now" in str(apply_now_tag['tags']):  
-            remove_network_id = apply_now_tag['id'] # variable that contains network ID of matched tag  
-            remove_network_id_list.append(remove_network_id) # appending network id variable to list of network ids
+    # creating list of network IDs that can later be referenced to remove the
+    # apply now tag once the script has executed
+    remove_network_id_list = get_meraki_networks_by_tag(_VWAN_APPLY_NOW_TAG, tags_network)
 
-    # if we are in maintenance mode or if update now tag is seen execute loop  
-    if (meraki_config['use_maintenance_window'] == 'Yes' and int(meraki_config['maintenance_time_in_utc']) == startTime.hour) or meraki_config['use_maintenance_window'] == 'No' or (len(remove_network_id_list) > 0):
-        # loop that iterates through the variable tagsnetwork and matches networks with vWAN in the tag
-        for i in tagsnetwork:
-            if i['tags'] is None or i['name'] == 'Tag-Placeholder':
-                pass
-            elif "vWAN-" in i['tags']:
-                network_info = i['id'] # need network ID in order to obtain device/serial information
-                netname = i['name'] # network name used to label Meraki VPN and Azure config
-                nettag = i['tags']  # obtaining all tags for network as this will be placed in VPN config
-                va = mdashboard.networks.getNetworkSiteToSiteVpn(network_info) # gets branch local vpn subnets
-                privsub = ([x['localSubnet'] for x in va['subnets']
-                                if x['useVpn'] == True])  # list comprehension to filter for subnets in vpn
-                devices = mdashboard.devices.getNetworkDevices(network_info) # call to get device info
+    # if we are in maintenance mode or if update now tag is seen
+    if (MerakiConfig.use_maintenance_window == _YES and MerakiConfig.maintenance_time_in_utc == start_time.hour) or \
+            MerakiConfig.use_maintenance_window == _NO or len(remove_network_id_list) > 0:
+        
+        # variable with new and existing s2s VPN config
+        merakivpns: list = []
+
+        # performing initial get to obtain all Meraki existing VPN info to add to
+        # merakivpns list above
+        originalvpn = mdashboard.organizations.getOrganizationThirdPartyVPNPeers(MerakiConfig.org_id)
+        merakivpns.append(originalvpn)
+
+        # Get access token to authenticate to Azure
+        access_token = get_bearer_token(_AZURE_MGMT_URL)
+        if access_token is None:
+            return
+        header_with_bearer_token = {'Authorization': f'Bearer {access_token}'}
+
+        # Get list of Azure Virtual WANs
+        virtual_wans = get_azure_virtual_wans(header_with_bearer_token)
+
+        # If no WANs, exit script
+        if virtual_wans is None:
+            return
+
+        # Find virtual wan instance
+        virtual_wan = find_azure_virtual_wan(AzureConfig.vwan_name, virtual_wans)
+
+        if virtual_wan is None:
+            logging.error(
+                "Could not find vWAN instance.  Please ensure you have created your Virtual WAN resource prior to running "
+                "this script or check that the system assigned identity has access to your Virtual WAN instance.")
+            return
+
+        # Get VWAN Hub Info
+        vwan_hub_info = get_azure_virtual_wan_hub_info(virtual_wan['resourceGroup'], header_with_bearer_token)
+
+        # If no wan hub, exit script
+        if vwan_hub_info is None:
+            return
+
+        # Generate random password for site to site VPN config
+        psk = pwgenerator.generate()
+        
+        # networks with vWAN in the tag
+        for network in tags_network:
+            if network['tags'] and network['name'] != 'Tag-Placeholder' and "vWAN-" in network['tags']:
+                # need network ID in order to obtain device/serial information
+                network_info = network['id']
+
+                # network name used to label Meraki VPN and Azure config
+                netname = str(network['name']).replace(' ', '')
+
+                # obtaining all tags for network as this will be placed in VPN config
+                nettag = str(network['tags'])
+
+                # gets branch local vpn subnets
+                va = mdashboard.networks.getNetworkSiteToSiteVpn(network_info)
+
+                # filter for subnets in vpn
+                privsub = ([x['localSubnet'] for x in va['subnets'] if x['useVpn'] is True])
+                devices = mdashboard.devices.getNetworkDevices(network_info)  # call to get device info
                 xdevices = devices[0]
-                up = xdevices['serial'] # serial number to later obtain the uplink information for the appliance
-                firmwareversion = xdevices['firmware'] # now we obtained the firmware version, need to still add the validation portion
-                firmwarecompliance = str(firmwareversion).startswith("wired-15") # validation to say True False if appliance is on 15 firmware
-                if not firmwarecompliance:
-                    break # if box isnt firmware compliant we break from the loop
-                modelnumber = xdevices['model']
 
-                # Check for NAT-T (Not supported by VWAN)
-                meraki_local_uplink_ip = IP(xdevices['lanIp'])
-                if meraki_local_uplink_ip.iptype() == 'PRIVATE':
-                    logging.error('NAT-T Detected for %s', netname)
-                    break
-                
-                uplinks = mdashboard.devices.getNetworkDeviceUplink(network_info, up) # obtains uplink information for branch
+                # serial number to later obtain the uplink information for the appliance
+                up = xdevices['serial']
+
+                # validation to say True False if appliance is on 15 firmware
+                firmwarecompliance = str(xdevices['firmware']).startswith("wired-15")
+                if not firmwarecompliance:
+                    break  # if box isnt firmware compliant we break from the loop
+
+                # obtains uplink information for branch
+                uplinks = mdashboard.devices.getNetworkDeviceUplink(network_info, up)
+
+                # obtains meraki sd wan traffic shaping uplink settings
+                uplinksetting = mdashboard.uplink_settings.getNetworkUplinkSettings(network_info)
 
                 # creating keys for dictionaries inside dictionaries
-                uplinks_info = dict.fromkeys(['WAN1', 'WAN2', 'Cellular'])
+                uplinks_info = dict.fromkeys(['WAN1', 'WAN2'])
                 uplinks_info['WAN1'] = dict.fromkeys(
-                    ['interface', 'status', 'ip', 'gateway', 'publicIp', 'dns', 'usingStaticIp'])
+                        ['interface', 'status', 'ip', 'gateway', 'publicIp', 'dns', 'usingStaticIp'])
                 uplinks_info['WAN2'] = dict.fromkeys(
-                    ['interface', 'status', 'ip', 'gateway', 'publicIp', 'dns', 'usingStaticIp'])
-                uplinks_info['Cellular'] = dict.fromkeys(
-                    ['interface', 'status', 'ip', 'provider', 'publicIp', 'model', 'connectionType'])
+                        ['interface', 'status', 'ip', 'gateway', 'publicIp', 'dns', 'usingStaticIp'])
 
                 for uplink in uplinks:
                     if uplink['interface'] == 'WAN 1':
@@ -247,299 +496,153 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                     elif uplink['interface'] == 'WAN 2':
                         for key in uplink.keys():
                             uplinks_info['WAN2'][key] = uplink[key]
-                    elif uplink['interface'] == 'Cellular':
-                        for key in uplink.keys():
-                            uplinks_info['Cellular'][key] = uplink[key]
 
-                uplinksetting = mdashboard.uplink_settings.getNetworkUplinkSettings(network_info) # obtains meraki sd wan traffic shaping uplink settings
-                secondaryuplinkindicator = 'False'
-                for g in uplinks_info:
-                    # loops through the variable uplinks_info which reveals the value for each uplink key
-                    if (uplinks_info['WAN2']['status'] == "Active" or uplinks_info['WAN2']['status'] == "Ready") and (uplinks_info['WAN1']['status'] == "Active" or uplinks_info['WAN1']['status'] == "Ready"):
-                        logging.info("both uplinks active")
+                secondary_uplink_indicator = False
+                # loops through the variable uplinks_info which reveals the
+                # value for each uplink key
+                if (uplinks_info['WAN2']['status'] == "Active" or uplinks_info['WAN2']['status'] == "Ready") and (
+                        uplinks_info['WAN1']['status'] == "Active" or uplinks_info['WAN1']['status'] == "Ready"):
+                    logging.info(f"Multiple uplinks are active for {netname}")
+                    secondary_uplink_indicator = True
 
-                        pubs = uplinks_info['WAN1']['publicIp']
-                        obj = IPWhois(pubs)
-                        res=obj.lookup_whois()
-                        localsp = res['nets'][0]['name']
+                    pubs = uplinks_info['WAN1']['publicIp']
+                    port = uplinksetting['bandwidthLimits']['wan1']['limitDown'] / 1000
+                    localsp = get_whois_info(pubs)
 
-                        pubssec = uplinks_info['WAN2']['publicIp']
-                        secondaryuplinkindicator = 'True'
-                        if(pubs == pubssec):
-                            # NAT-T detected, using a placeholder value
-                            pubssec = "1.2.3.4"
-                            secisp = localsp
-                        else:
-                            isp2obj = IPWhois(pubssec)
-                            isp2res=obj.lookup_whois()
-                            secisp = res['nets'][0]['name']
+                    pubsec = uplinks_info['WAN2']['publicIp']
+                    wan2port = uplinksetting['bandwidthLimits']['wan2']['limitDown'] / 1000
 
-                        port = (uplinksetting['bandwidthLimits']['wan1']['limitDown'])/1000
-                        wan2port = (uplinksetting['bandwidthLimits']['wan2']['limitDown'])/1000
-
-                    elif uplinks_info['WAN2']['status'] == "Active":
-                        pubs = uplinks_info['WAN2']['publicIp']
-                        port = (uplinksetting['bandwidthLimits']['wan2']['limitDown'])/1000
-                        isp2obj = IPWhois(pubssec)
-                        isp2res=obj.lookup_whois()
-                        localsp = res['nets'][0]['name']
-
-                    elif uplinks_info['WAN1']['status'] == "Active":
-                        pubs = uplinks_info['WAN1']['publicIp']
-                        port = (uplinksetting['bandwidthLimits']['wan1']['limitDown'])/1000
-                        obj = IPWhois(pubs)
-                        res=obj.lookup_whois()
-                        localsp = res['nets'][0]['name']
-
+                    if pubs == pubsec:
+                        # Second uplink with same public IP detected
+                        # using placeholder value for secondary uplink
+                        pubsec = "1.2.3.4"
+                        secisp = localsp
                     else:
-                        logging.error("uplink info error")
+                        secisp = get_whois_info(pubsec)
 
+                elif uplinks_info['WAN2']['status'] == "Active":
+                    pubs = uplinks_info['WAN2']['publicIp']
+                    port = uplinksetting['bandwidthLimits']['wan2']['limitDown'] / 1000
+                    localsp = get_whois_info(pubs)
 
-                # writing function to get ISP
-                splist = []
+                elif uplinks_info['WAN1']['status'] == "Active":
+                    pubs = uplinks_info['WAN1']['publicIp']
+                    port = uplinksetting['bandwidthLimits']['wan1']['limitDown'] / 1000
+                    localsp = get_whois_info(pubs)
 
-                #################################
-                # this logic needs to be fixed to account for WAN 2 being primary instead of always secondary
-                #################################
-                # listing site below in output with branch information
-                if secondaryuplinkindicator == 'True':
-                    branches = str(netname) + "  " + str(pubs) + "  " + str(localsp) + "  " + str(port) + "  " + str(pubssec) + "  " + str(secisp) + "  " + str(wan2port) + "  " + str(privsub)
                 else:
-                    branches = str(netname) + "  " +  str(pubs) + "  " +  str(localsp) + "  " +  str(port) + "  " +  str(privsub)
+                    logging.error(f"No uplinks are active for {netname}")
+                    break
 
-                netname2 = netname.replace(' ', '')
+                # If the site has two uplinks; create and update vwan site with
+                wans = {'wan1': {'ipaddress': pubs, 'isp': localsp, 'linkspeed': port}}
+                if secondary_uplink_indicator:
+                    wans['wan2'] = {'ipaddress': pubsec, 'isp': secisp, 'linkspeed': wan2port}
 
-                # If the site has two uplinks; create and update vwan site with data in API call to contain two links
-                if secondaryuplinkindicator == 'True':
-                    wans = {'wan1': {'ipaddress': pubs, 'isp': localsp, 'linkspeed': port},
-                            'wan2': {'ipaddress': pubssec, 'isp': secisp, 'linkspeed': wan2port}}
-                else:			
-                    wans = {'wan1': {'ipaddress': pubs, 'isp': localsp, 'linkspeed': port}}
-
-                site_config = siteConfig(vwan_hub_info['location'], virtualWAN['id'], privsub, netname2, wans) # here we are parsing private subnets wrong
-
-                #################################
+                site_config = get_site_config(vwan_hub_info['location'], virtual_wan['id'], privsub, netname, wans)
 
                 # Create/Update the vWAN Site + Site Links
-                vwan_site_endpoint = "https://management.azure.com/subscriptions/" + \
-                                        azure_config['subscription_id'] + "/resourceGroups/" + \
-                                        virtualWAN['resourceGroup'] + \
-                                        "/providers/Microsoft.Network/vpnSites/"
-
-                vwan_site_status = requests.put(
-                        vwan_site_endpoint + "/" + netname2 + "?api-version=2019-12-01",
-                        headers={'Authorization': 'Bearer ' + access_token}, json=site_config)
-
-                if (vwan_site_status.status_code < 200 or vwan_site_status.status_code > 202):
-                    logging.error("Failed adding/updating vWAN site")
-                    logging.debug(vwan_site_status.text)
+                virtual_wan_site_link_update = update_azure_virtual_wan_site_links(virtual_wan['resourceGroup'], netname,
+                                                                                    header_with_bearer_token, site_config)
+                if virtual_wan_site_link_update is None:
                     return
+                logging.info(json.dumps(virtual_wan_site_link_update, indent=2))
 
-                logging.info(json.dumps(vwan_site_status.json(), indent=2))
-
-                #######################################
-                # Connect Site Links to VWAN Hub
-                #######################################
-
-                # Connection configuration
-                vwan_vpn_site_id = "/subscriptions/" + \
-                                    azure_config['subscription_id'] + "/resourceGroups/" + \
-                                    virtualWAN['resourceGroup'] + "/providers/Microsoft.Network/vpnSites/" + netname2
-                vpnSiteLinks = []
-                for (wan, properties) in wans.items():
-                    vpnSiteLinks.append({
-                                    "name": netname2 + "-"+wan,
-                                    "properties": {
-                                        "vpnSiteLink": {"id": vwan_vpn_site_id + "/vpnSiteLinks/"+netname2+"-"+wan},
-                                        "connectionBandwidth": int(float(properties['linkspeed'])),
-                                        "ipsecPolicies": [
-                                            {
-                                                "saLifeTimeSeconds": 3600,
-                                                "ipsecEncryption": "AES256",
-                                                "ipsecIntegrity": "SHA256",
-                                                "ikeEncryption": "AES256",
-                                                "ikeIntegrity": "SHA256",
-                                                "dhGroup": "DHGroup14",
-                                                "pfsGroup": "None"
-                                            }
-                                        ],
-                                        "vpnConnectionProtocolType": "IKEv2",
-                                        "sharedKey": psk,
-                                        "enableBgp": False,
-                                        "enableRateLimiting": False,
-                                        "useLocalAzureIpAddress": False,
-                                        "usePolicyBasedTrafficSelectors": False,
-                                        "routingWeight": 0
-                                    }
-                                })
-
-                connection_config = {
-                    "properties": {
-                        "remoteVpnSite": {
-                            "id": vwan_vpn_site_id
-                        },
-                        "vpnLinkConnections": vpnSiteLinks
-                    }
-                }
-
-                vwan_vpnGateway_connection_endpoint = "https://management.azure.com/subscriptions/" + \
-                                                    azure_config['subscription_id'] + "/resourceGroups/" + virtualWAN[
-                                                        'resourceGroup'] + \
-                                                    "/providers/Microsoft.Network/vpnGateways/" + vwan_hub_info[
-                                                        'vpnGatewayName'] + \
-                                                    "/vpnConnections/" + netname2 + "-connection"
-                vwan_hub_info = requests.put(
-                    vwan_vpnGateway_connection_endpoint + "/" + "?api-version=2020-03-01",
-                    headers={'Authorization': 'Bearer ' + access_token}, json=connection_config)
-
-                if (vwan_hub_info.status_code < 200 or vwan_hub_info.status_code > 202):
-                    logging.error("Failed creating Virtual WAN connection")
-                    logging.debug(vwan_hub_info.text)
+                # Create Virtual WAN Connection
+                vwan_connection_result = create_virtual_wan_connection(virtual_wan['resourceGroup'], vwan_hub_info['vpnGatewayName'], netname,
+                                                                    AzureConfig.subscription_id, wans.items(), psk, header_with_bearer_token)
+                if vwan_connection_result is None:
                     return
-
-                logging.info(json.dumps(vwan_hub_info.json(), indent=2))
+                
+                logging.info(json.dumps(vwan_connection_result, indent=2))
 
                 # Get list of site configurations
                 sites = []
-                if('vpnSites' in virtualWAN['properties']):
-                    for site in virtualWAN['properties']['vpnSites']:
+                if 'vpnSites' in virtual_wan['properties']:
+                    for site in virtual_wan['properties']['vpnSites']:
                         sites.append(site['id'])
 
                 # Get storage account keys
-                storage_endpoint = "https://management.azure.com/subscriptions/" + azure_config[
-                    'subscription_id'] + "/resourceGroups/" + \
-                                virtualWAN['resourceGroup'] + "/providers/Microsoft.Storage/storageAccounts/" + \
-                                azure_config['storage_account_name'] + "/"
-                keys_request = requests.post(
-                    storage_endpoint + "listKeys?api-version=2019-06-01",
-                    headers={'Authorization': 'Bearer ' + access_token}, )
-                
-                if (keys_request.status_code != 200):
-                    logging.error("Failed getting storage account keys to write VWAN configuration")
-                    logging.debug(keys_request.text)
+                keys = get_azure_storage_keys(virtual_wan['resourceGroup'], AzureConfig.storage_account_name, header_with_bearer_token)
+                if keys is None:
                     return
-                
-                keys = keys_request.json()
 
                 storage_account_key = keys['keys'][0]['value']
 
                 # Ensure container exists
-                storage_container_endpoint = "https://management.azure.com/subscriptions/" + azure_config[
-                    'subscription_id'] + "/resourceGroups/" + \
-                                virtualWAN['resourceGroup'] + "/providers/Microsoft.Storage/storageAccounts/" + \
-                                azure_config['storage_account_name'] + "/blobServices/default/containers/" + \
-                                azure_config['storage_account_container']
-                storage_container = requests.put(
-                    storage_container_endpoint + "?api-version=2019-06-01",
-                    headers={'Authorization': 'Bearer ' + access_token}, json={"properties": {"publicAccess": "None"}})
-
-                if (storage_container.status_code < 200 or storage_container.status_code > 201 ):
-                    logging.error("Could not ensure storage account container exists to write Virtual WAN configuration to blob storage.")
-                    logging.debug(storage_container.text)
+                storage_container = create_azure_storage_container(virtual_wan['resourceGroup'],
+                                                                   AzureConfig.storage_account_name,
+                                                                   AzureConfig.storage_account_container,
+                                                                   header_with_bearer_token)
+                if storage_container is False:
                     return
 
-                # Generate SAS URL
-                token = BlobSasPermissions(read=True, add=False, create=False, write=True)
-                sas_url = 'https://' + azure_config['storage_account_name'] + '.blob.core.windows.net/' + azure_config[
-                    'storage_account_container'] + '/' + azure_config['storage_account_blob'] + '?' + generate_blob_sas(
-                    azure_config['storage_account_name'], azure_config['storage_account_container'], azure_config['storage_account_blob'],
-                    snapshot=None, account_key=storage_account_key, user_delegation_key=None, permission=token,
-                    expiry=datetime.utcnow() + timedelta(hours=1), start=datetime.utcnow(), policy_id=None, ip=None)
+                # Generate SAS URL to write Virtual WAN config to Blob Storage
+                sas_url = generate_azure_storage_sas_url(AzureConfig.storage_account_name,
+                                                         AzureConfig.storage_account_container,
+                                                         AzureConfig.storage_account_blob, storage_account_key)
 
-                # Write site configuration file to blob storage
-                vwan_site_config = requests.post(
-                    vwan_endpoint + "/vpnConfiguration?api-version=2020-04-01",
-                        headers={'Authorization': 'Bearer ' + access_token},
-                    json={'vpnSites': sites, 'outputBlobSasUrl': sas_url})
-
-                if vwan_site_config.status_code != 202:
-                    logging.error("Could not get blob configuration")
-                    logging.debug(vwan_site_config.text)
-                    return
-
-                try:
-                    with urllib.request.urlopen(sas_url) as url:
-                        vwan_config_file = json.loads(url.read().decode())
-
-                except Exception as e:  # -*- coding: utf-8 -*-
-                    logging.error("Could not download config")
-                    logging.debug(e)
+                # Write/Get Virtual WAN Config from Blob Storage               
+                vwan_config = get_azure_virtual_wan_config(virtual_wan['id'], sites, sas_url, header_with_bearer_token)
+                if vwan_config is None:
                     return
 
                 # Show site configuration file
-                logging.info(json.dumps(vwan_config_file, indent=2))
+                logging.info(json.dumps(vwan_config, indent=2))
 
-                # here we are going to try and correctly parse the vwan config file
-            
-                azureinstance0 = "192.0.2.1" # placeholder value
-                azureinstance1 = "192.0.2.2" # placeholder value
-                azureconnectedsubnets = ['1.1.1.1'] # placeholder value
-            
-                for element in vwan_config_file:
-                    if element['vpnSiteConfiguration']['Name'] == netname2: # replace with netname2 variable for site name
-                        ins0 = element['vpnSiteConnections'][0]['gatewayConfiguration']['IpAddresses']['Instance0'] # parses primary Azure IP
-                        ins1 = element['vpnSiteConnections'][0]['gatewayConfiguration']['IpAddresses']['Instance1'] # parses backup Azure IP
-                        consubnets = element['vpnSiteConnections'][0]['hubConfiguration']['ConnectedSubnets'] # Connected subnets in Azure
-                        azureinstance0 = str(ins0)
-                        azureinstance1 = str(ins1)
-                        azureconnectedsubnets = consubnets
+                # Parse the vwan config file
+                azure_instance_0 = "192.0.2.1"  # placeholder value
+                azure_instance_1 = "192.0.2.2"  # placeholder value
+                azure_connected_subnets = ['1.1.1.1']  # placeholder value
 
-                specifictag = re.findall(r'[v]+[W]+[A]+[N]+[-]+[0-999]', str(nettag))
-                
-                azconsubnets = json.dumps(azureconnectedsubnets)
+                for element in vwan_config:
+                    # replace with netname variable for site name
+                    if element['vpnSiteConfiguration']['Name'] == netname:
+                        # parses primary Azure IP
+                        azure_instance_0 = str(
+                                element['vpnSiteConnections'][0]['gatewayConfiguration']['IpAddresses']['Instance0'])
+                        # parses backup Azure IP
+                        azure_instance_1 = str(
+                                element['vpnSiteConnections'][0]['gatewayConfiguration']['IpAddresses']['Instance1'])
+                        # Connected subnets in Azure
+                        azure_connected_subnets = element['vpnSiteConnections'][0]['hubConfiguration'][
+                            'ConnectedSubnets']
 
-                # sample IPsec template config that is later replaced with corresponding Azure variables (PSK pub IP, lan IP etc)
-                putdata1 = '{"name":"placeholder","publicIp":"192.0.0.0","privateSubnets":["0.0.0.0/0"],"secret":"meraki123", "ipsecPolicies":{"ikeCipherAlgo":["aes256"],"ikeAuthAlgo":["sha1"],"ikeDiffieHellmanGroup":["group2"],"ikeLifetime":28800,"childCipherAlgo":["aes256"],"childAuthAlgo":["sha1"],"childPfsGroup":["group2"],"childLifetime":3600},"networkTags":["west"]}'
-                database = putdata1.replace("west", specifictag[0]) # applies specific tag from org overview page to ipsec config
-                updatedata = database.replace('192.0.0.0', azureinstance0)   # change variable to intance 0 IP
-                updatedata1 = updatedata.replace('placeholder' , netname) # replaces placeholder value with dashboard network name
-                addprivsub = updatedata1.replace('["0.0.0.0/0"]', str(azconsubnets)) # replace with azure private networks
-                addpsk = addprivsub.replace('meraki123', psk) # replace with pre shared key variable generated above
-                newmerakivpns = merakivpns[0]
-                
-                # creating second data input to append instance 1 to the merakivpn list
-                
-                putdata2 = '{"name":"theplaceholder","publicIp":"192.1.0.0","privateSubnets":["0.0.0.0/1"],"secret":"meraki223", "ipsecPolicies":{"ikeCipherAlgo":["aes256"],"ikeAuthAlgo":["sha1"],"ikeDiffieHellmanGroup":["group2"],"ikeLifetime":28800,"childCipherAlgo":["aes256"],"childAuthAlgo":["sha1"],"childPfsGroup":["group2"],"childLifetime":3600},"networkTags":["east"]}'
-                
-                secondaryvpnname = str(netname2) + "-sec"
-                database2 = putdata2.replace("east", specifictag[0] + "-sec") # applies specific tag from org overview page to ipsec config need to make this secondary
-                updatedata2 = database2.replace('192.1.0.0', azureinstance1)
-                updatedata3 = updatedata2.replace('theplaceholder' , secondaryvpnname) # replaces placeholder value with dashboard network name
-                addprivsub3 = updatedata3.replace('["0.0.0.0/1"]', str(azconsubnets)) # replace with azure private networks
-                addpsk2 = addprivsub3.replace('meraki223', psk) # replace with pre shared key variable generated above
+                specific_tag = re.findall(r'[v]+[W]+[A]+[N]+[-]+[0-999]', nettag)
 
-                if not any(site['name'] == netname for site in newmerakivpns):
-                    newmerakivpns.append(json.loads(addpsk)) # appending new vpn config with original vpn config
-                    newmerakivpns.append(json.loads(addpsk2))
+                # Build meraki configurations for Azure VWAN VPN Gateway Instance 0 & 1
+                azure_instance_0_config = get_meraki_ipsec_config(netname, azure_instance_0, azure_connected_subnets, psk,
+                                                                  specific_tag[0])
+                azure_instance_1_config = get_meraki_ipsec_config(f"{netname}-sec", azure_instance_1,
+                                                                  azure_connected_subnets, psk, f"{specific_tag[0]}-sec")
 
-                # updating preshared key for primary VPN tunnel
-                for vpnpeers in merakivpns[0]: # iterates through the list of VPNs from the original call
-                    if vpnpeers['name'] == netname: # matches against network name that is meraki network name variable
-                        if vpnpeers['secret'] != psk: # if statement for if password in VPN doesnt match psk variable
-                            vpnpeers['secret'] = psk # updates the pre shared key for the vpn dictionary
+                new_meraki_vpns = merakivpns[0]
 
-                # updating preshared key for backup VPN tunnel
-                for vpnpeers in merakivpns[0]: # iterates through the list of VPNs from the original call
-                    if vpnpeers['name'] == str(netname2) + '-sec': # matches against network name that is netname variable
-                        if vpnpeers['secret'] != psk: # if statement for if password in VPN doesnt match psk variable
-                            vpnpeers['secret'] = psk # updates the pre shared key for the vpn dictionary
+                if not any(site['name'] == netname for site in new_meraki_vpns):
+                    # appending new vpn config with original vpn config
+                    new_meraki_vpns.append(azure_instance_0_config)
+                    new_meraki_vpns.append(azure_instance_1_config)
+
+                # Update Primary and Backup VPN tunnel shared keys
+                for vpnpeers in merakivpns[0]:
+                    # matches against network name that is meraki network name
+                    # variable
+                    if vpnpeers['name'] == netname or vpnpeers['name'] == f'{netname}-sec':
+                        if vpnpeers['secret'] != psk:
+                            # update the pre shared key for the vpn dictionary
+                            vpnpeers['secret'] = psk
+
             else:
-                # VWAN tag not found, skip to next tag
-                pass
+                logging.debug("VWAN tag not found, skip to next tag")
 
-        # Final Call to Update Meraki VPN config with Parsed Blob from Azure 
-        updatemvpn = mdashboard.organizations.updateOrganizationThirdPartyVPNPeers(
-            meraki_config['org_id'], newmerakivpns
-        )
-        logging.info(updatemvpn)
+        # Final Call to Update Meraki VPN config with Parsed Blob from Azure
+        update_meraki_vpn = mdashboard.organizations.updateOrganizationThirdPartyVPNPeers(MerakiConfig.org_id,
+                                                                                          new_meraki_vpns)
+        logging.info(update_meraki_vpn)
 
         # Cleanup any found vwan-apply-now tags
         if len(remove_network_id_list) > 0:
-            for remove_tag in tagsnetwork:
-                if "vwan-apply-now" in str(remove_tag['tags']):
-                    new_tag_list = remove_tag['tags'].replace('vwan-apply-now','')
-                    remove_apply_now_tag = mdashboard.networks.updateNetwork(remove_tag['id'],tags=new_tag_list)
-
+            clean_meraki_vwan_tags(mdashboard, _VWAN_APPLY_NOW_TAG, tags_network)
     else:
-        logging.info("Maintenance mode detected, but it is not during scheduled hours, nor has the vwan-apply-now tag been detected.  Skipping updates")
-
+        logging.info("Maintenance mode detected but it is not during scheduled hours "
+                     f"or the {_VWAN_APPLY_NOW_TAG} tag has not been detected. Skipping updates")

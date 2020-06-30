@@ -41,7 +41,7 @@
                 "description": "API Key to Meraki (can be found via the my profile page)"
             }
         },
-        "meraki_orgName": {
+        "meraki_org_name": {
             "type": "string",
             "defaultValue": "",
             "metadata": {
@@ -150,33 +150,33 @@
                             "value": "[parameters('meraki_api_key')]"
                         },
                         {
-                            "name": "meraki_orgName",
-                            "value": "[parameters('meraki_orgName')]"
-                        },
-                        {
-                            "name": "storage_account_blob",
-                            "value": "[parameters('storage_account_blob')]"
-                        },
-                        {
-                            "name": "storage_account_container",
-                            "value": "[parameters('storage_account_container')]"
-                        },
-                        {
-                            "name": "storage_account_name",
-                            "value": "[toLower(parameters('storage_account_name'))]"
-                        },
+                            "name": "meraki_org_name",
+                            "value": "[parameters('meraki_org_name')]"
+                        },                        
                         {
                             "name": "subscription_id",
                             "value": "[subscription().subscriptionId]"
+                        },
+                        {
+                            "name": "vwan_name",
+                            "value": "[parameters('vwan_name')]"
                         },
                         {
                             "name": "vwan_hub_name",
                             "value": "[parameters('vwan_hub_name')]"
                         },
                         {
-                            "name": "vwan_name",
-                            "value": "[parameters('vwan_name')]"
+                            "name": "storage_account_name",
+                            "value": "[toLower(parameters('storage_account_name'))]"
                         },
+                        {
+                            "name": "storage_account_container",
+                            "value": "[parameters('storage_account_container')]"
+                        }, 
+                        {
+                            "name": "storage_account_blob",
+                            "value": "[parameters('storage_account_blob')]"
+                        },                                                                    
                         {
                             "name": "use_maintenance_window",
                             "value": "[parameters('use_maintenance_window')]"
