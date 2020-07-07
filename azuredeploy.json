@@ -2,7 +2,7 @@
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
     "contentVersion": "1.0.0.0",
     "parameters": {
-        "functionAppName": {
+        "function_app_name": {
             "type": "string",
             "defaultValue": "",
             "minLength": 2,
@@ -11,7 +11,31 @@
                 "description": "Specify the name of the function application (no special characters allowed)"
             }
         },
-        "ApplicationInsightsLocation": {
+        "function_location": {
+            "type": "string",
+            "allowedValues": [
+                "Australia East",
+                "Brazil South",
+                "Central US",
+                "East Asia",
+                "East US",
+                "East US 2",
+                "France Central",
+                "Korea Central",
+                "North Europe",
+                "South Central US",
+                "Southeast Asia",
+                "UK South",
+                "UK West",
+                "West Europe",
+                "West US",
+                "West US 2"                
+            ],
+            "metadata": {
+                "description": "Specify the region for the Azure Function to be deployed to."
+            }
+        },
+        "app_insights_location": {
             "type": "string",
             "allowedValues": [
                 "Canada Central",                
@@ -104,21 +128,21 @@
         }
     },
     "variables": {
-        "hostingPlanName": "[parameters('functionAppName')]",
+        "hostingPlanName": "[parameters('function_app_name')]",
         "storageAccountName": "[concat('storage', uniquestring(resourceGroup().id))]",
         "functionPackage": "https://github.com/MitchellGulledge/Meraki-vWAN/raw/master/MerakiFunction.zip"
     },
     "resources": [
         {
-            "name": "[parameters('functionAppName')]",
+            "name": "[parameters('function_app_name')]",
             "type": "Microsoft.Web/sites",
             "apiVersion": "2018-11-01",
-            "location": "[resourceGroup().location]",
+            "location": "[parameters('function_location')]",
             "kind": "functionapp,linux",
             "dependsOn": [
                 "[resourceId('Microsoft.Web/serverfarms/', variables('hostingPlanName'))]",
                 "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
-                "[resourceId('microsoft.insights/components/', parameters('functionAppName'))]"
+                "[resourceId('microsoft.insights/components/', parameters('function_app_name'))]"
             ],
             "identity": {
                 "type": "SystemAssigned"
@@ -128,7 +152,7 @@
                     "appSettings": [                        
                         {
                             "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
-                            "value": "[reference(resourceId('microsoft.insights/components/', parameters('functionAppName')), '2018-05-01-preview').InstrumentationKey]"
+                            "value": "[reference(resourceId('microsoft.insights/components/', parameters('function_app_name')), '2018-05-01-preview').InstrumentationKey]"
                         },
                         {
                             "name": "AzureWebJobsStorage",
@@ -189,7 +213,7 @@
                     ],
                     "LinuxFxVersion": "PYTHON|3.8"
                 },                
-                "name": "[parameters('functionAppName')]",
+                "name": "[parameters('function_app_name')]",
                 "clientAffinityEnabled": false,
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms/', variables('hostingPlanName'))]"
             }            
@@ -198,7 +222,7 @@
             "apiVersion": "2018-11-01",
             "name": "[variables('hostingPlanName')]",
             "type": "Microsoft.Web/serverfarms",
-            "location": "[resourceGroup().location]",
+            "location": "[parameters('function_location')]",
             "kind": "linux",
             "tags": null,
             "dependsOn": [],
@@ -230,11 +254,11 @@
         },
         {
             "apiVersion": "2018-05-01-preview",
-            "name": "[parameters('functionAppName')]",
+            "name": "[parameters('function_app_name')]",
             "type": "Microsoft.Insights/components",
-            "location": "[parameters('ApplicationInsightsLocation')]",
+            "location": "[parameters('app_insights_location')]",
             "properties": {
-                "ApplicationId": "[parameters('functionAppName')]"
+                "ApplicationId": "[parameters('function_app_name')]"
             }
         }
     ],
