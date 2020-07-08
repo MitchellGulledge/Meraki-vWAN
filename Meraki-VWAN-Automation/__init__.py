@@ -48,7 +48,7 @@ def get_bearer_token(resource_uri):
         access_token = resp.json()['access_token']
     except Exception as e:
         logging.error("Could not obtain access token to manage other Azure resources.")
-        logging.debug(e)
+        logging.error(e)
 
     return access_token
 
@@ -192,7 +192,7 @@ def get_azure_virtual_wans(header_with_bearer_token):
         logging.error(
                 "Cannot find vWAN resource.  Please make sure you have delegated access in the Azure portal for this "
                 "script to have access to your Azure subscription.")
-        logging.debug(virtual_wans_request.text)
+        logging.error(virtual_wans_request.text)
         return None
 
     return virtual_wans_request.json()
@@ -205,7 +205,7 @@ def get_azure_virtual_wan_hub_info(resource_group, header_with_bearer_token):
 
     if vwan_hub_info.status_code != 200:
         logging.error("Cannot find vWAN Hub")
-        logging.debug(f"Cannot find vWAN Hub {vwan_hub_info.text}")
+        logging.error(vwan_hub_info.text)
         return None
 
     vwan_hub_info = vwan_hub_info.json()
@@ -224,7 +224,7 @@ def get_azure_virtual_wan_config(virtual_wan_id, sites, sas_url, header_with_bea
 
     if vwan_site_config.status_code != 202:
         logging.error("Could not get blob configuration")
-        logging.debug(vwan_site_config.text)
+        logging.error(vwan_site_config.text)
         return None
 
     try:
@@ -232,7 +232,7 @@ def get_azure_virtual_wan_config(virtual_wan_id, sites, sas_url, header_with_bea
             vwan_config_file = json.loads(url.read().decode())
     except Exception as e:
         logging.error("Could not download config")
-        logging.debug(e)
+        logging.error(e)
         return None
 
     return vwan_config_file
@@ -247,7 +247,7 @@ def update_azure_virtual_wan_site_links(resource_group, site_name, header_with_b
 
     if vwan_site_status.status_code < 200 or vwan_site_status.status_code > 202:
         logging.error("Failed adding/updating vWAN site")
-        logging.debug(vwan_site_status.text)
+        logging.error(vwan_site_status.text)
         return None
 
     return vwan_site_status.json()
@@ -260,8 +260,9 @@ def get_azure_storage_keys(resource_group, account_name, header_with_bearer_toke
     keys_request = requests.post(storage_endpoint, headers=header_with_bearer_token)
 
     if keys_request.status_code != 200:
-        logging.error("Failed getting storage account keys to write VWAN configuration")
-        logging.debug(keys_request.text)
+        logging.error("Failed getting storage account keys to write VWAN configuration. Please ensure "
+                        "the storage account exists or that proper RBAC permissions have been applied.")
+        logging.error(keys_request.text)
         return None
 
     return keys_request.json()
@@ -303,7 +304,7 @@ def create_azure_storage_container(resource_group, account_name, container_name,
     if storage_container.status_code < 200 or storage_container.status_code > 201:
         logging.error(
                 "Could not ensure storage account container exists to write Virtual WAN configuration to blob storage.")
-        logging.debug(storage_container.text)
+        logging.error(storage_container.text)
         return False
 
     return True
@@ -342,14 +343,14 @@ def create_virtual_wan_connection(resource_group, vpn_gateway_name, network_name
 
     if vwan_connection_info.status_code < 200 or vwan_connection_info.status_code > 202:
         logging.error("Failed creating Virtual WAN connection")
-        logging.debug(vwan_connection_info.text)
+        logging.error(vwan_connection_info.text)
         return None
 
     return vwan_connection_info.json()
 
 
 class MerakiConfig:
-    api_key = os.environ['meraki_api_key']
+    api_key = os.environ['meraki_api_key'].lower()
     org_name = os.environ['meraki_org_name']
     use_maintenance_window = os.environ['use_maintenance_window']
     maintenance_time_in_utc = int(os.environ['maintenance_time_in_utc'])
@@ -360,8 +361,8 @@ class AzureConfig:
     subscription_id = os.environ['subscription_id']
     vwan_name = os.environ['vwan_name']
     vwan_hub_name = os.environ['vwan_hub_name']
-    storage_account_name = os.environ['storage_account_name']
-    storage_account_container = os.environ['storage_account_container']
+    storage_account_name = os.environ['storage_account_name'].lower()
+    storage_account_container = os.environ['storage_account_container'].lower()
     storage_account_blob = os.environ['storage_account_blob']
 
 
@@ -460,21 +461,23 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 # obtaining all tags for network as this will be placed in VPN config
                 nettag = str(network['tags'])
 
+                # get device info
+                devices = mdashboard.devices.getNetworkDevices(network_info)
+                xdevices = devices[0]
+
+                # check if appliance is on 15 firmware
+                firmwarecompliance = str(xdevices['firmware']).startswith("wired-15")
+                if not firmwarecompliance:
+                    break  # if box isnt firmware compliant we break from the loop
+
                 # gets branch local vpn subnets
                 va = mdashboard.networks.getNetworkSiteToSiteVpn(network_info)
 
                 # filter for subnets in vpn
                 privsub = ([x['localSubnet'] for x in va['subnets'] if x['useVpn'] is True])
-                devices = mdashboard.devices.getNetworkDevices(network_info)  # call to get device info
-                xdevices = devices[0]
 
                 # serial number to later obtain the uplink information for the appliance
                 up = xdevices['serial']
-
-                # validation to say True False if appliance is on 15 firmware
-                firmwarecompliance = str(xdevices['firmware']).startswith("wired-15")
-                if not firmwarecompliance:
-                    break  # if box isnt firmware compliant we break from the loop
 
                 # obtains uplink information for branch
                 uplinks = mdashboard.devices.getNetworkDeviceUplink(network_info, up)
@@ -546,15 +549,12 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                                                                                     header_with_bearer_token, site_config)
                 if virtual_wan_site_link_update is None:
                     return
-                logging.info(json.dumps(virtual_wan_site_link_update, indent=2))
 
                 # Create Virtual WAN Connection
                 vwan_connection_result = create_virtual_wan_connection(virtual_wan['resourceGroup'], vwan_hub_info['vpnGatewayName'], netname,
                                                                     AzureConfig.subscription_id, wans.items(), psk, header_with_bearer_token)
                 if vwan_connection_result is None:
                     return
-                
-                logging.info(json.dumps(vwan_connection_result, indent=2))
 
                 # Get list of site configurations
                 sites = []
@@ -586,9 +586,6 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 vwan_config = get_azure_virtual_wan_config(virtual_wan['id'], sites, sas_url, header_with_bearer_token)
                 if vwan_config is None:
                     return
-
-                # Show site configuration file
-                logging.info(json.dumps(vwan_config, indent=2))
 
                 # Parse the vwan config file
                 azure_instance_0 = "192.0.2.1"  # placeholder value
@@ -633,12 +630,13 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                             vpnpeers['secret'] = psk
 
             else:
-                logging.debug("VWAN tag not found, skip to next tag")
+                logging.info("VWAN tag not found, skip to next tag")
 
         # Final Call to Update Meraki VPN config with Parsed Blob from Azure
         update_meraki_vpn = mdashboard.organizations.updateOrganizationThirdPartyVPNPeers(MerakiConfig.org_id,
                                                                                           new_meraki_vpns)
-        logging.info(update_meraki_vpn)
+
+        logging.info("VPN Peers updated!")
 
         # Cleanup any found vwan-apply-now tags
         if len(remove_network_id_list) > 0:
