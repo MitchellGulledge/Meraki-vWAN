@@ -2,7 +2,7 @@
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
     "contentVersion": "1.0.0.0",
     "parameters": {
-        "function_app_name": {
+        "functionAppName": {
             "type": "string",
             "defaultValue": "",
             "minLength": 2,
@@ -11,31 +11,7 @@
                 "description": "Specify the name of the function application (no special characters allowed)"
             }
         },
-        "function_location": {
-            "type": "string",
-            "allowedValues": [
-                "Australia East",
-                "Brazil South",
-                "Central US",
-                "East Asia",
-                "East US",
-                "East US 2",
-                "France Central",
-                "Korea Central",
-                "North Europe",
-                "South Central US",
-                "Southeast Asia",
-                "UK South",
-                "UK West",
-                "West Europe",
-                "West US",
-                "West US 2"                
-            ],
-            "metadata": {
-                "description": "Specify the region for the Azure Function to be deployed to."
-            }
-        },
-        "app_insights_location": {
+        "ApplicationInsightsLocation": {
             "type": "string",
             "allowedValues": [
                 "Canada Central",                
@@ -51,8 +27,7 @@
                 "Central India",
                 "Japan East",
                 "Korea Central",
-                "Switzerland North",
-                "South Africa North",
+                "Switzerland North",                
                 "UK South"
             ],
             "metadata": {
@@ -87,29 +62,6 @@
                 "description": "Name of the Virtual WAN hub the Meraki should establish connections to"
             }
         },
-        "storage_account_name": {
-            "type": "string",
-            "defaultValue": "",
-            "minLength": 3,
-            "maxLength": 24,
-            "metadata": {
-                "description": "Storage account name used to temporary storage Virtual WAN configuration data"
-            }
-        },
-        "storage_account_container": {
-            "type": "string",
-            "defaultValue": "vpnconfig",
-            "metadata": {
-                "description": "Storage account container where Virtual WAN configuration will be written to"
-            }
-        },
-        "storage_account_blob": {
-            "type": "string",
-            "defaultValue": "vpnconfig",
-            "metadata": {
-                "description": "Name of the Virtual WAN configuration blob that will be written to an Azure Storage Account"
-            }
-        },
         "use_maintenance_window": {
             "type": "string",
             "defaultValue": "Yes",
@@ -128,21 +80,21 @@
         }
     },
     "variables": {
-        "hostingPlanName": "[parameters('function_app_name')]",
+        "hostingPlanName": "[parameters('functionAppName')]",
         "storageAccountName": "[concat('storage', uniquestring(resourceGroup().id))]",
         "functionPackage": "https://github.com/MitchellGulledge/Meraki-vWAN/raw/master/MerakiFunction.zip"
     },
     "resources": [
         {
-            "name": "[parameters('function_app_name')]",
+            "name": "[parameters('functionAppName')]",
             "type": "Microsoft.Web/sites",
             "apiVersion": "2018-11-01",
-            "location": "[parameters('function_location')]",
+            "location": "[resourceGroup().location]",
             "kind": "functionapp,linux",
             "dependsOn": [
                 "[resourceId('Microsoft.Web/serverfarms/', variables('hostingPlanName'))]",
                 "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
-                "[resourceId('microsoft.insights/components/', parameters('function_app_name'))]"
+                "[resourceId('microsoft.insights/components/', parameters('functionAppName'))]"
             ],
             "identity": {
                 "type": "SystemAssigned"
@@ -152,7 +104,7 @@
                     "appSettings": [                        
                         {
                             "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
-                            "value": "[reference(resourceId('microsoft.insights/components/', parameters('function_app_name')), '2018-05-01-preview').InstrumentationKey]"
+                            "value": "[reference(resourceId('microsoft.insights/components/', parameters('functionAppName')), '2018-05-01-preview').InstrumentationKey]"
                         },
                         {
                             "name": "AzureWebJobsStorage",
@@ -189,18 +141,6 @@
                         {
                             "name": "vwan_hub_name",
                             "value": "[parameters('vwan_hub_name')]"
-                        },
-                        {
-                            "name": "storage_account_name",
-                            "value": "[toLower(parameters('storage_account_name'))]"
-                        },
-                        {
-                            "name": "storage_account_container",
-                            "value": "[parameters('storage_account_container')]"
-                        }, 
-                        {
-                            "name": "storage_account_blob",
-                            "value": "[parameters('storage_account_blob')]"
                         },                                                                    
                         {
                             "name": "use_maintenance_window",
@@ -213,7 +153,7 @@
                     ],
                     "LinuxFxVersion": "PYTHON|3.8"
                 },                
-                "name": "[parameters('function_app_name')]",
+                "name": "[parameters('functionAppName')]",
                 "clientAffinityEnabled": false,
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms/', variables('hostingPlanName'))]"
             }            
@@ -222,7 +162,7 @@
             "apiVersion": "2018-11-01",
             "name": "[variables('hostingPlanName')]",
             "type": "Microsoft.Web/serverfarms",
-            "location": "[parameters('function_location')]",
+            "location": "[resourceGroup().location]",
             "kind": "linux",
             "tags": null,
             "dependsOn": [],
@@ -254,11 +194,11 @@
         },
         {
             "apiVersion": "2018-05-01-preview",
-            "name": "[parameters('function_app_name')]",
+            "name": "[parameters('functionAppName')]",
             "type": "Microsoft.Insights/components",
-            "location": "[parameters('app_insights_location')]",
+            "location": "[parameters('ApplicationInsightsLocation')]",
             "properties": {
-                "ApplicationId": "[parameters('function_app_name')]"
+                "ApplicationId": "[parameters('functionAppName')]"
             }
         }
     ],
