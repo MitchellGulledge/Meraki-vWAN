@@ -29,7 +29,7 @@
                 "UK West",
                 "West Europe",
                 "West US",
-                "West US 2"                
+                "West US 2"
             ],
             "metadata": {
                 "description": "Specify the region for the Azure Function to be deployed to."
@@ -126,7 +126,7 @@
             },
             "properties": {
                 "siteConfig": {
-                    "appSettings": [                        
+                    "appSettings": [
                         {
                             "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
                             "value": "[reference(resourceId('microsoft.insights/components/', parameters('function_app_name')), '2018-05-01-preview').InstrumentationKey]"
@@ -154,7 +154,7 @@
                         {
                             "name": "meraki_org_name",
                             "value": "[parameters('meraki_org_name')]"
-                        },                        
+                        },
                         {
                             "name": "subscription_id",
                             "value": "[subscription().subscriptionId]"
@@ -166,7 +166,7 @@
                         {
                             "name": "vwan_hub_name",
                             "value": "[parameters('vwan_hub_name')]"
-                        },                                                                   
+                        },
                         {
                             "name": "use_maintenance_window",
                             "value": "[parameters('use_maintenance_window')]"
@@ -177,11 +177,11 @@
                         }
                     ],
                     "LinuxFxVersion": "PYTHON|3.8"
-                },                
+                },
                 "name": "[parameters('function_app_name')]",
                 "clientAffinityEnabled": false,
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms/', variables('hostingPlanName'))]"
-            }            
+            }
         },
         {
             "apiVersion": "2018-11-01",
