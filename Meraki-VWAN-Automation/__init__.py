@@ -239,7 +239,11 @@ def get_azure_virtual_wan_gateway_config(resource_group, virtual_wan_hub, vpn_ga
     # Due to no Azure API existing for connected networks to the hub, pull connected VNets via effective routes
     effective_routes_endpoint = _get_microsoft_network_base_url(_AZURE_MGMT_URL, AzureConfig.subscription_id, resource_group)\
                         + f"/virtualHubs/{virtual_wan_hub}/effectiveRoutes?api-version=2020-05-01"
-    effective_routes_endpoint_response = requests.post(effective_routes_endpoint, headers=header_with_bearer_token)
+    payload = {
+        "VirtualWanResourceType": "RouteTable",
+        "ResourceId": f"/subscriptions/{AzureConfig.subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Network/virtualHubs/{virtual_wan_hub}/hubRouteTables/defaultRouteTable"
+    }
+    effective_routes_endpoint_response = requests.post(effective_routes_endpoint, headers=header_with_bearer_token, data=json.dumps(payload))
 
     if effective_routes_endpoint_response.status_code == 202 or effective_routes_endpoint_response.status_code == 200:                
         # Get header and pull new endpoint
