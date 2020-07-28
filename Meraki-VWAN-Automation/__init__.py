@@ -244,6 +244,10 @@ def get_azure_virtual_wan_gateway_config(resource_group, virtual_wan_hub, vpn_ga
         "ResourceId": f"/subscriptions/{AzureConfig.subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Network/virtualHubs/{virtual_wan_hub}/hubRouteTables/defaultRouteTable"
     }
 
+    logging.info('effective_routes_endpoint: {}'.format(effective_routes_endpoint))
+    logging.info('AzureConfig.subscription_id: {}, resource_group: {}, virtual_wan_hub: {}'.format(AzureConfig.subscription_id, resource_group, virtual_wan_hub))
+    logging.info('payload: {}'.format(payload))
+
     new_header = header_with_bearer_token
     new_header['Content-Type'] = 'application/json'
     new_header['Accept'] = 'application/json, text/javascript, */*; q=0.01'
