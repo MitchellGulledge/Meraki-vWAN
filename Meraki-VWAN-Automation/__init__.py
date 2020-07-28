@@ -264,6 +264,7 @@ def get_azure_virtual_wan_gateway_config(resource_group, virtual_wan_hub, vpn_ga
                 effective_routes_async_result = effective_routes_async_response.json()
                 logging.info(f"Retrying for effective routes. Attempt: {x}")
                 try:
+                    logging.info('effective_routes_async_result: {}'.format(effective_routes_async_result))
                     for network in effective_routes_async_result['properties']['output']['value']:
                         if network['nextHopType'] == 'Remote Hub' or network['nextHopType'] == 'Virtual Network Connection':
                             for prefix in network['addressPrefixes']:
