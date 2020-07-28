@@ -212,7 +212,7 @@ def get_azure_virtual_wan_hub_info(resource_group, header_with_bearer_token):
         return None
 
     vwan_hub_info = vwan_hub_info.json()
- 
+
     try:
         vwan_hub_info['vpnGatewayName'] = vwan_hub_info['properties']['vpnGateway']['id'].rsplit('/', 1)[1]
     except:
@@ -241,7 +241,7 @@ def get_azure_virtual_wan_gateway_config(resource_group, virtual_wan_hub, vpn_ga
                         + f"/virtualHubs/{virtual_wan_hub}/effectiveRoutes?api-version=2020-05-01"
     effective_routes_endpoint_response = requests.post(effective_routes_endpoint, headers=header_with_bearer_token)
 
-    if effective_routes_endpoint_response.status_code == 202 or effective_routes_endpoint_response.status_code == 200:                
+    if effective_routes_endpoint_response.status_code == 202 or effective_routes_endpoint_response.status_code == 200:
         # Get header and pull new endpoint
         if effective_routes_endpoint_response.headers['Azure-AsyncOperation']:
             effective_routes_async_response = requests.get(effective_routes_endpoint_response.headers['Azure-AsyncOperation'],
@@ -260,7 +260,7 @@ def get_azure_virtual_wan_gateway_config(resource_group, virtual_wan_hub, vpn_ga
                     logging.error("Could not obtain effective routes. Trying again...")
                     effective_routes_async_response = requests.get(effective_routes_endpoint_response.headers['Azure-AsyncOperation'],
                                                             headers=header_with_bearer_token)
-                
+
                 if x == 4:
                     logging.error("Could not obtain effective routes and 5 attempts.")
                     return None
@@ -387,7 +387,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
     # if we are in maintenance mode or if update now tag is seen
     if (MerakiConfig.use_maintenance_window == _YES and MerakiConfig.maintenance_time_in_utc == start_time.hour) or \
             MerakiConfig.use_maintenance_window == _NO or len(remove_network_id_list) > 0:
-        
+
         # variable with new and existing s2s VPN config
         merakivpns: list = []
 
@@ -428,7 +428,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
         # Generate random password for site to site VPN config
         psk = pwgenerator.generate()
 
-        # Get Virtual WAN Gateway Configuration               
+        # Get Virtual WAN Gateway Configuration
         vwan_config = get_azure_virtual_wan_gateway_config(virtual_wan['resourceGroup'], vwan_hub_info['name'], vwan_hub_info['vpnGatewayName'], header_with_bearer_token)
         if vwan_config is None:
             return
@@ -451,10 +451,10 @@ def main(MerakiTimer: func.TimerRequest) -> None:
 
             if not any(re.match(f"(?i){MerakiConfig.tag_prefix}[0-9]+", lowertag) \
                                                 for lowertag in (tag.lower() for tag in tags)):
-                logging.info(f"No vwan tags found for {network['name']}, skipping to next network") 
+                logging.info(f"No vwan tags found for {network['name']}, skipping to next network")
                 continue
 
-            logging.info(f"Tags found for {network['name']} | Tags: {tags}") 
+            logging.info(f"Tags found for {network['name']} | Tags: {tags}")
 
             # need network ID in order to obtain device/serial information
             network_info = network['id']
