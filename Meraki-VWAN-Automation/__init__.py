@@ -243,6 +243,11 @@ def get_azure_virtual_wan_gateway_config(resource_group, virtual_wan_hub, vpn_ga
         "VirtualWanResourceType": "RouteTable",
         "ResourceId": f"/subscriptions/{AzureConfig.subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Network/virtualHubs/{virtual_wan_hub}/hubRouteTables/defaultRouteTable"
     }
+
+    new_header = header_with_bearer_token
+    new_header['Content-Type'] = 'application/json'
+    new_header['Accept'] = 'application/json, text/javascript, */*; q=0.01'
+
     effective_routes_endpoint_response = requests.post(effective_routes_endpoint, headers=header_with_bearer_token, data=json.dumps(payload))
 
     if effective_routes_endpoint_response.status_code == 202 or effective_routes_endpoint_response.status_code == 200:                
