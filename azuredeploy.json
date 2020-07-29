@@ -80,13 +80,6 @@
                 "description": "Name of the Virtual WAN resource Meraki should target"
             }
         },
-        "vwan_hub_name": {
-            "type": "string",
-            "defaultValue": "",
-            "metadata": {
-                "description": "Name of the Virtual WAN hub the Meraki should establish connections to"
-            }
-        },
         "use_maintenance_window": {
             "type": "string",
             "defaultValue": "Yes",
@@ -162,11 +155,7 @@
                         {
                             "name": "vwan_name",
                             "value": "[parameters('vwan_name')]"
-                        },
-                        {
-                            "name": "vwan_hub_name",
-                            "value": "[parameters('vwan_hub_name')]"
-                        },                                                                   
+                        },                                                                 
                         {
                             "name": "use_maintenance_window",
                             "value": "[parameters('use_maintenance_window')]"
