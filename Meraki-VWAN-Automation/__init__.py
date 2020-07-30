@@ -110,7 +110,7 @@ def get_site_link_config(name, wan, vwan_vpn_site_id, linkspeed, psk):
                     "ikeEncryption": "AES256",
                     "ikeIntegrity": "SHA256",
                     "dhGroup": "DHGroup14",
-                    "pfsGroup": "None"
+                    "pfsGroup": "PFS14"
                 }
             ],
             "vpnConnectionProtocolType": "IKEv2",
