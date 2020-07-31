@@ -151,22 +151,6 @@ def get_meraki_networks_by_tag(tag_name, networks):
     return remove_network_id_list
 
 
-def get_mx_from_network_devices(network_devices: list):
-    '''
-    Returns only the MX information obtained from
-    mdashboard.devices.getNetworkDevices(). If it does not exist,
-    return an empty list.
-    @param network_devices: mdashboard.devices.getNetworkDevices().
-    @rtype:   list
-    @return:  list of information of MX.
-    '''
-    result = []
-    for network_device in network_devices:
-        if network_device['model'][0:2] == 'MX':
-            result.append(network_device)
-    return result
-
-
 def meraki_tag_placeholder_network_check(meraki_network_list):
 
     create_placeholder_network = True
