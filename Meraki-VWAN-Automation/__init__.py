@@ -14,7 +14,6 @@ import azure.functions as func
 import meraki
 import requests
 from IPy import IP
-from ipwhois import IPWhois
 from passwordgenerator import pwgenerator
 
 from __app__.shared_code.appliance import Appliance
@@ -303,14 +302,6 @@ def find_azure_virtual_wan(virtual_wan_name, virtual_wans):
             break
 
     return virtual_wan
-
-
-def get_whois_info(public_ip):
-    obj = IPWhois(public_ip)
-    res = obj.lookup_whois()
-    whois_info = res["nets"][0]['name']
-
-    return whois_info
 
 
 def check_vwan_hubs_exist(virtual_wan, tags):
