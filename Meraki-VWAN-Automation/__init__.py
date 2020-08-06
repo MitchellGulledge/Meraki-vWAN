@@ -643,7 +643,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                     logging.error('Failed to fetch warm_spare_settings')
                     logging.error(e.message)
 
-                if warm_spare_settings['primarySerial']:
+                if 'primarySerial' in warm_spare_settings:
                     appliance = Appliance(network_info,
                                           warm_spare_settings.get('enabled'),
                                           warm_spare_settings.get('primarySerial'),
