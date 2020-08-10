@@ -152,6 +152,23 @@ def get_meraki_networks_by_tag(tag_name, networks):
 
 
 def meraki_tag_placeholder_network_check(meraki_network_list):
+def get_mx_from_network_devices(network_devices: list):
+    '''
+    Returns only the MX information obtained from
+    mdashboard.devices.getNetworkDevices(). If it does not exist,
+    return an empty list.
+    @param network_devices: mdashboard.devices.getNetworkDevices().
+    @rtype:   list
+    @return:  list of information of MX.
+    '''
+    result = []
+    for network_device in network_devices:
+        if network_device['model'][0:2] == 'MX':
+            result.append(network_device)
+    return result
+
+
+def meraki_tag_placeholder_network_check(mdashboard, meraki_network_list):
 
     create_placeholder_network = True
 
@@ -161,10 +178,11 @@ def meraki_tag_placeholder_network_check(meraki_network_list):
 
     if create_placeholder_network == True:
         logging.info(f"{MerakiConfig.tag_placeholder_network} does not exist, creating it...")
-        create_network = mdashboard.networks.createOrganizationNetwork(MerakiConfig.org_id,
+        tag_network = mdashboard.networks.createOrganizationNetwork(MerakiConfig.org_id,
                                 name = MerakiConfig.tag_placeholder_network, type = "appliance")
+        meraki_network_list.append(tag_network)
 
-    return
+    return meraki_network_list
 
 
 def meraki_tag_placeholder_network_check_tags(mdashboard, meraki_network_list):
@@ -531,19 +549,19 @@ def main(MerakiTimer: func.TimerRequest) -> None:
 
     # If no maintenance mode, check if changes were made in last 5 minutes or 
     # if script has not been run within 5 minutes; check for updates
-    if dashboard_config_change_ts is False and MerakiTimer.past_due is False and MerakiConfig.use_maintenance_window == _NO:
-        logging.info("No changes in the past 5 minutes have been detected. No updates needed.")
-        return
+    #if dashboard_config_change_ts is False and MerakiTimer.past_due is False and MerakiConfig.use_maintenance_window == _NO:
+    #    logging.info("No changes in the past 5 minutes have been detected. No updates needed.")
+    #    return
 
     # Meraki call to obtain Network information
-    tags_network = mdashboard.networks.getOrganizationNetworks(MerakiConfig.org_id)
+    meraki_networks = mdashboard.networks.getOrganizationNetworks(MerakiConfig.org_id)
 
     # Check if tag placeholder network exists, if not create it
-    meraki_tag_placeholder_network_check(tags_network)
-
+    tags_network = meraki_tag_placeholder_network_check(mdashboard, meraki_networks)
+    
     # Check if required tags exist in the tags placeholder network
     meraki_tag_placeholder_network_check_tags(mdashboard, tags_network)
-
+    
     # Check if we should force changes even if during maintenance window
     # creating list of network IDs that can later be referenced to remove the
     # apply now tag once the script has executed
