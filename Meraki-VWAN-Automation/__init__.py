@@ -14,8 +14,9 @@ import azure.functions as func
 import meraki
 import requests
 from IPy import IP
-from ipwhois import IPWhois
 from passwordgenerator import pwgenerator
+
+from __app__.shared_code.appliance import Appliance
 
 _AZURE_MGMT_URL = "https://management.azure.com"
 _BLOB_HOST_URL = "blob.core.windows.net"
@@ -52,29 +53,20 @@ def get_bearer_token(resource_uri):
 
 
 def get_site_config(location, vwan_id, address_prefixes, site_name, wans):
-    vpn_site_links = [{
-        "name": site_name + "-wan1",
-        "properties": {
-            "ipAddress": wans['wan1']['ipaddress'],
-            "linkProperties": {
-                "linkProviderName": wans['wan1']['isp'],
-                "linkSpeedInMbps": int(float(wans['wan1']['linkspeed']))
-            }
-        }
-    }]
 
-    if 'wan2' in wans:
-        vpn_site_links.append({
-            "name": site_name + "-wan2",
-            "properties": {
-                "ipAddress": wans['wan2']['ipaddress'],
-                "linkProperties": {
-                    "linkProviderName": wans['wan2']['isp'],
-                    "linkSpeedInMbps": int(float(wans['wan2']['linkspeed']))
+    vpn_site_links = []
+    for key in wans.keys():
+        site = {
+            'name': site_name + '-' + key,
+            'properties': {
+                'ipAddress': wans[key]['ipaddress'],
+                'linkProperties': {
+                    'linkProviderName': wans[key]['isp'],
+                    'linkSpeedInMbps': wans[key]['linkspeed']
                 }
             }
         }
-        )
+        vpn_site_links.append(site)
 
     site_config = {
         "tags": {},
@@ -159,6 +151,7 @@ def get_meraki_networks_by_tag(tag_name, networks):
     return remove_network_id_list
 
 
+def meraki_tag_placeholder_network_check(meraki_network_list):
 def get_mx_from_network_devices(network_devices: list):
     '''
     Returns only the MX information obtained from
@@ -311,14 +304,6 @@ def find_azure_virtual_wan(virtual_wan_name, virtual_wans):
             break
 
     return virtual_wan
-
-
-def get_whois_info(public_ip):
-    obj = IPWhois(public_ip)
-    res = obj.lookup_whois()
-    whois_info = res["nets"][0]['name']
-
-    return whois_info
 
 
 def check_vwan_hubs_exist(virtual_wan, tags):
@@ -670,18 +655,23 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 # network name used to label Meraki VPN and Azure config
                 netname = str(network['name']).replace(' ', '')
 
-                # get Meraki device info
-                devices = mdashboard.devices.getNetworkDevices(network_info)
-                xdevices = get_mx_from_network_devices(devices)
-                if not xdevices:
+                try:
+                    warm_spare_settings = mdashboard.mx_warm_spare_settings.getNetworkWarmSpareSettings(network_info)
+                except Exception as e:
+                    logging.error('Failed to fetch warm_spare_settings')
+                    logging.error(e.message)
+
+                if 'primarySerial' in warm_spare_settings:
+                    appliance = Appliance(network_info,
+                                          warm_spare_settings.get('enabled'),
+                                          warm_spare_settings.get('primarySerial'),
+                                          warm_spare_settings.get('spareSerial'))
+                else:
                     logging.info(f"MX device not found in {network['name']}, skipping network.")
                     continue
 
-                xdevices = xdevices[0]
-
                 # check if appliance is on 15 firmware
-                firmwarecompliance = str(xdevices['firmware']).startswith("wired-15")
-                if not firmwarecompliance:
+                if not appliance.is_firmware_compliant():
                     logging.info(f"MX device for {network['name']} not running v15 firmware, skipping network.")
                     continue  # if box isnt firmware skip to next network
 
@@ -691,71 +681,8 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 # filter for subnets in vpn
                 privsub = ([x['localSubnet'] for x in va['subnets'] if x['useVpn'] is True])
 
-                # serial number to later obtain the uplink information for the appliance
-                up = xdevices['serial']
-
-                # obtains uplink information for branch
-                uplinks = mdashboard.devices.getNetworkDeviceUplink(network_info, up)
-
-                # obtains meraki sd wan traffic shaping uplink settings
-                uplinksetting = mdashboard.uplink_settings.getNetworkUplinkSettings(network_info)
-
-                # creating keys for dictionaries inside dictionaries
-                uplinks_info = dict.fromkeys(['WAN1', 'WAN2'])
-                uplinks_info['WAN1'] = dict.fromkeys(
-                        ['interface', 'status', 'ip', 'gateway', 'publicIp', 'dns', 'usingStaticIp'])
-                uplinks_info['WAN2'] = dict.fromkeys(
-                        ['interface', 'status', 'ip', 'gateway', 'publicIp', 'dns', 'usingStaticIp'])
-
-                for uplink in uplinks:
-                    if uplink['interface'] == 'WAN 1':
-                        for key in uplink.keys():
-                            uplinks_info['WAN1'][key] = uplink[key]
-                    elif uplink['interface'] == 'WAN 2':
-                        for key in uplink.keys():
-                            uplinks_info['WAN2'][key] = uplink[key]
-
-                secondary_uplink_indicator = False
-                # loops through the variable uplinks_info which reveals the
-                # value for each uplink key
-                if (uplinks_info['WAN2']['status'] == "Active" or uplinks_info['WAN2']['status'] == "Ready") and (
-                        uplinks_info['WAN1']['status'] == "Active" or uplinks_info['WAN1']['status'] == "Ready"):
-                    logging.info(f"Multiple uplinks are active for {netname}")
-                    secondary_uplink_indicator = True
-
-                    pubs = uplinks_info['WAN1']['publicIp']
-                    port = uplinksetting['bandwidthLimits']['wan1']['limitDown'] / 1000
-                    localsp = get_whois_info(pubs)
-
-                    pubsec = uplinks_info['WAN2']['publicIp']
-                    wan2port = uplinksetting['bandwidthLimits']['wan2']['limitDown'] / 1000
-
-                    if pubs == pubsec:
-                        # Second uplink with same public IP detected
-                        # using placeholder value for secondary uplink
-                        pubsec = "1.2.3.4"
-                        secisp = localsp
-                    else:
-                        secisp = get_whois_info(pubsec)
-
-                elif uplinks_info['WAN2']['status'] == "Active":
-                    pubs = uplinks_info['WAN2']['publicIp']
-                    port = uplinksetting['bandwidthLimits']['wan2']['limitDown'] / 1000
-                    localsp = get_whois_info(pubs)
-
-                elif uplinks_info['WAN1']['status'] == "Active":
-                    pubs = uplinks_info['WAN1']['publicIp']
-                    port = uplinksetting['bandwidthLimits']['wan1']['limitDown'] / 1000
-                    localsp = get_whois_info(pubs)
-
-                else:
-                    logging.error(f"No uplinks are active for {netname}")
-                    continue
-
                 # If the site has two uplinks; create and update vwan site with
-                wans = {'wan1': {'ipaddress': pubs, 'isp': localsp, 'linkspeed': port}}
-                if secondary_uplink_indicator:
-                    wans['wan2'] = {'ipaddress': pubsec, 'isp': secisp, 'linkspeed': wan2port}
+                wans = appliance.get_wan_links()
 
                 site_config = get_site_config(vwan_hub_info['location'], virtual_wan['id'], privsub, netname, wans)
 
