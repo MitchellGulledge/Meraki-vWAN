@@ -151,7 +151,6 @@ def get_meraki_networks_by_tag(tag_name, networks):
     return remove_network_id_list
 
 
-def meraki_tag_placeholder_network_check(meraki_network_list):
 def get_mx_from_network_devices(network_devices: list):
     '''
     Returns only the MX information obtained from
@@ -549,9 +548,9 @@ def main(MerakiTimer: func.TimerRequest) -> None:
 
     # If no maintenance mode, check if changes were made in last 5 minutes or 
     # if script has not been run within 5 minutes; check for updates
-    #if dashboard_config_change_ts is False and MerakiTimer.past_due is False and MerakiConfig.use_maintenance_window == _NO:
-    #    logging.info("No changes in the past 5 minutes have been detected. No updates needed.")
-    #    return
+    if dashboard_config_change_ts is False and MerakiTimer.past_due is False and MerakiConfig.use_maintenance_window == _NO:
+        logging.info("No changes in the past 5 minutes have been detected. No updates needed.")
+        return
 
     # Meraki call to obtain Network information
     meraki_networks = mdashboard.networks.getOrganizationNetworks(MerakiConfig.org_id)
