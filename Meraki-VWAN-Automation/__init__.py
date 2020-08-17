@@ -509,8 +509,8 @@ class MerakiConfig:
     use_maintenance_window = os.environ['use_maintenance_window']
     maintenance_time_in_utc = int(os.environ['maintenance_time_in_utc'])
     tag_prefix = 'vwan-'
-    primary_tag_regex = f"(?i){tag_prefix}([a-zA-Z0-9_-]+)-[0-9]+$"
-    secondary_tag_regex = f"(?i){tag_prefix}([a-zA-Z0-9_-]+)-[0-9]+-sec$"
+    primary_tag_regex = f"(?i)^{tag_prefix}([a-zA-Z0-9_-]+)-[0-9]+$"
+    secondary_tag_regex = f"(?i)^{tag_prefix}([a-zA-Z0-9_-]+)-[0-9]+-sec$"
     tag_placeholder_network = 'tag-placeholder'
     org_id = None
 
