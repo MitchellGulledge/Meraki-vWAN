@@ -39,6 +39,7 @@ def get_bearer_token(resource_uri):
     except:
         logging.error("Could not obtain authentication token for Azure. Please ensure "
                       "System Assigned identities have been enabled on the Azure Function.")
+        return None
 
     token_auth_uri = f"{identity_endpoint}?resource={resource_uri}&api-version=2017-09-01"
     head_msi = {'secret': identity_header}
@@ -246,13 +247,36 @@ def check_if_meraki_vwan_tags_exist(tags, network_name, vwan_hub_name=""):
         logging.info(f"No tags found for {network_name}, skipping to next network")
         return False
 
+    # Check if tags match the defined vwan hub
+    if vwan_hub_name:
+        hubs = []
+        logging.info(f"Checking if vwan hub {vwan_hub_name} is found in tags {tags} for network {network_name}")
+        for tag in tags:
+            try:
+                temp_vwan_hub_name = re.match(MerakiConfig.primary_tag_regex, tag).group(1)
+                if temp_vwan_hub_name not in hubs:
+                    hubs.append(temp_vwan_hub_name)
+            except:
+                continue
+        
+        if hubs:
+            if len(hubs) > 1:
+                logging.warning(f"Multiple tagged networks for {network_name} exist. This is not a supported configuration and may " \
+                            "cause undesirable behavior. Please ensure only one tag exists for Virtual WAN on this network.")
+
+            for hub in hubs:
+                if hub.lower() == vwan_hub_name.lower():
+                    return True
+                
+        logging.info(f"No vwan tags found for vwan hub {vwan_hub_name} on network {network_name}")
+        return False
+        
+
     # Check if any vwan tags exist in the list of tags
     if not any(re.match(MerakiConfig.primary_tag_regex, lowertag) \
                                         for lowertag in (tag.lower() for tag in tags)):
-        vwan_hub_text = ""
-        if vwan_hub_name:
-            vwan_hub_text = f" for hub {vwan_hub_name}"
-        logging.info(f"No vwan tags found for {network_name}{vwan_hub_text}, skipping to next network")
+
+        logging.info(f"No vwan tags found for {network_name}, skipping to next network")
         return False
 
     return True
@@ -398,7 +422,7 @@ def get_azure_virtual_wan_gateway_config(resource_group, virtual_wan_hub, vpn_ga
                     
                     return gateway_info
                 except Exception as e:
-                    logging.error("Could not obtain effective routes. Trying again...")
+                    logging.info("Could not obtain effective routes. Trying again...")
                     effective_routes_async_response = requests.get(effective_routes_endpoint_response.headers['Azure-AsyncOperation'],
                                                             headers=header_with_bearer_token)
 
@@ -599,6 +623,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
 
         # Complie list of hubs that are in scope for Meraki
         tagged_hubs = meraki_vwan_hubs(tags_network)
+        logging.info(f"Tagged Virtual WAN Hubs found: {tagged_hubs}")
 
         # Check if VWAN Hubs in scope exist; if not log an error the hub doesn't exist
         hubs_exist = check_vwan_hubs_exist(virtual_wan, tagged_hubs)
