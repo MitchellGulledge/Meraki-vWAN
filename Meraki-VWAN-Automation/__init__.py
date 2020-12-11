@@ -610,7 +610,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
         # Generate random password for site to site VPN config
         psk = pwgenerator.generate()
 
-        logging.info("logging meraki vpns: " + str(new_meraki_vpns))
+        logging.info("logging meraki vpns: " + str(merakivpns[0]))
         new_meraki_vpns = merakivpns[0]
 
         # Loop through each VWAN hub
