@@ -1,5 +1,5 @@
 --find-links wheelhouse
-meraki==0.110.3
+meraki
 passwordgenerator==1.4
 ipwhois==1.1.0
 IPy==1.00
