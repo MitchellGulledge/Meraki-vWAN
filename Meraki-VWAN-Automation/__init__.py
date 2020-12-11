@@ -534,7 +534,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
         return
 
     # Check if any config changes have been made to the Meraki configuration
-    change_log = MerakiConfig.sdk_auth.change_log.getOrganizationConfigurationChanges(\
+    change_log = MerakiConfig.sdk_auth.organizations.getOrganizationConfigurationChanges(\
         MerakiConfig.org_id, total_pages=1, timespan=300)
 
     # Creating variable that indicates whether there has been a Meraki config change    
