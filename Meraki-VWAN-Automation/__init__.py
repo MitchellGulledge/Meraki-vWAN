@@ -634,9 +634,9 @@ def main(MerakiTimer: func.TimerRequest) -> None:
             found_tagged_networks = False
             for network in meraki_networks:
                 # Check for placeholder network
-                if network['name'].lower() == MerakiConfig.tag_placeholder_network:
-                    logging.info(f"{network['name']} network found, skipping.")
-                    continue
+                #if network['name'].lower() == MerakiConfig.tag_placeholder_network:
+                #    logging.info(f"{network['name']} network found, skipping.")
+                #    continue
 
                 # Check if tags exist
                 if not network['tags']:
@@ -726,7 +726,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 azure_instance_0_config = get_meraki_ipsec_config(netname, azure_instance_0,
                                                                 azure_connected_subnets, psk, specific_tag)
                 azure_instance_1_config = get_meraki_ipsec_config(f"{netname}-sec", azure_instance_1,
-                                                                azure_connected_subnets, psk, f"{specific_tag}-sec")
+                                                                azure_connected_subnets, psk, f"['None']")
 
                 primary_peer_exists = False
                 secondary_peer_exists = False
