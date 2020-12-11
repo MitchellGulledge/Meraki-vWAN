@@ -38,7 +38,7 @@ class Appliance():
         '''
         try:
             mdashboard = meraki.DashboardAPI(api_key=API_KEY, suppress_logging=True, print_console=True)
-            return mdashboard.devices.getNetworkDevice(self.network_id, serial)
+            return mdashboard.devices.getDevice(serial)
         except:
             return
 
