@@ -167,23 +167,6 @@ def get_mx_from_network_devices(network_devices: list):
             result.append(network_device)
     return result
 
-# commenting out below function as it is no longer need in v1 of Meraki API
-#def meraki_tag_placeholder_network_check(mdashboard, meraki_network_list):
-#
-#    create_placeholder_network = True
-#
-#    for network in meraki_network_list:
-#        if network['name'].lower() == MerakiConfig.tag_placeholder_network:
-#            create_placeholder_network = False
-#
-#    if create_placeholder_network == True:
-#        logging.info(f"{MerakiConfig.tag_placeholder_network} does not exist, creating it...")
-#        tag_network = mdashboard.networks.createOrganizationNetwork(MerakiConfig.org_id,
-#                                name = MerakiConfig.tag_placeholder_network, type = "appliance")
-#        meraki_network_list.append(tag_network)
-#
-#    return meraki_network_list
-
 
 def meraki_tag_placeholder_network_check_tags(mdashboard, meraki_network_list):
 
@@ -202,7 +185,7 @@ def meraki_tag_placeholder_network_check_tags(mdashboard, meraki_network_list):
             continue
 
         # Check if any vwan tags exist
-        tags = meraki_convert_tags_to_list(network['tags'])
+        tags = network['tags']
         if not check_if_meraki_vwan_tags_exist(tags, network['name']):
             continue
 
@@ -213,7 +196,6 @@ def meraki_tag_placeholder_network_check_tags(mdashboard, meraki_network_list):
             if re.match(MerakiConfig.primary_tag_regex, tag):
                 current_tags.append(tag)
                 all_tags.append(tag)
-                all_tags.append(tag+'-sec')
 
     logging.info(f"Current placeholder tags: {placeholder_tags}")
     logging.info(f"Current tags on networks: {current_tags}")
@@ -304,18 +286,6 @@ def meraki_vwan_hubs(tags_network):
                 continue
 
     return hubs
-
-
-def meraki_convert_tags_to_list(tags):
-    # Meraki tags are in a space delimited string
-    # This function converts the string to a list
-    tags_list = []
-
-    if tags:
-        for tag in tags.strip().split(' '):
-            tags_list.append(tag)
-
-    return tags_list
 
 
 def find_azure_virtual_wan(virtual_wan_name, virtual_wans):
@@ -535,11 +505,7 @@ class MerakiConfig:
     tag_prefix = 'vwan-'
     primary_tag_regex = f"(?i)^{tag_prefix}([a-zA-Z0-9_-]+)-[0-9]+$"
     secondary_tag_regex = f"(?i)^{tag_prefix}([a-zA-Z0-9_-]+)-[0-9]+-sec$"
-    tag_placeholder_network = 'tag-placeholder'
     org_id = None
-    latest_tag_placeholder_network = ''
-    tag_placeholder_network_list = []
-    tag_placeholder_tags_list = []
     # authenticating to the Meraki SDK
     sdk_auth = meraki.DashboardAPI(api_key)
 
@@ -595,66 +561,6 @@ def main(MerakiTimer: func.TimerRequest) -> None:
     # commenting out as this is no longer needed in v1 of Meraki SDK
     # tags_network = meraki_tag_placeholder_network_check(MerakiConfig.sdk_auth, meraki_networks)
 
-    # iterating through network list to build list of tag-placeholder networks
-    for networks in meraki_networks: 
-        # match condition if network name begins with tag-placeholder network
-        if MerakiConfig.tag_placeholder_network in str(networks['name']):
-
-            # appending to tag_placeholder_network_list
-            MerakiConfig.tag_placeholder_network_list.append(networks['name'])
-
-            # appending tags to tag_placeholder_tags_list
-            MerakiConfig.tag_placeholder_tags_list.append(networks['tags'])
-    
-
-    # old meraki_tag_placeholder_network_check returns network list after tag placeholder is created
-
-    # Check if required tags exist in the tags placeholder network
-    # commenting out for new v1 code, meraki_tag_placeholder_network_check_tags 
-    # doesnt return any future value either
-    #meraki_tag_placeholder_network_check_tags(MerakiConfig.sdk_auth, tags_network)
-
-    # Creating variable that will be indicator for number of tag placeholder networks
-    tag_placeholder_network_number_count = 0
-
-    # iterating through the tag_placeholder_network_list to identify latest_tag_placeholder_network
-    for placeholder in MerakiConfig.tag_placeholder_network_list:
-        # regex to find all numbers in name string of tag place holder network
-        numbers = re.findall('[0-9]+', str(placeholder))
-        
-        if not numbers:
-            logging.info("Tag-Placeholder network detected")
-
-        else:
-            if int(numbers[0]) > tag_placeholder_network_number_count:
-                tag_placeholder_network_number_count = int(numbers[0])
-                MerakiConfig.latest_tag_placeholder_network = placeholder
-
-
-    logging.info(MerakiConfig.latest_tag_placeholder_network)
-
-
-    # now we need to find the length of the latest_tag_placeholder_network, there is a 255 character limit
-    for latest_tag_network in meraki_networks:
-        if MerakiConfig.latest_tag_placeholder_network in latest_tag_network['name']:
-            # configuring the tag threshold to be 200 since the limit is 255
-            if len(str(latest_tag_network['tags'])) > 200:
-                logging.info("latest tag placeholder is near string limit creating new tag placeholder network")
-                
-                latest_tag_numbers = re.findall('[0-9]+', str(latest_tag_network['name']))
-                if not latest_tag_numbers:
-                    MerakiConfig.latest_tag_placeholder_network = 'Tag-Placeholder-2'
-                else:
-                    new_last_element = int(latest_tag_network['name'][-1]) + 1
-                    MerakiConfig.latest_tag_placeholder_network = str(latest_tag_network['name'][0:-1]) + \
-                        str(new_last_element)
-                    logging.info(MerakiConfig.latest_tag_placeholder_network)
-
-            else:
-                logging.info("length of list of tags on latest_tag_network under 200, not creating new network")
-
-    logging.info(MerakiConfig.tag_placeholder_tags_list)
-
     # Check if we should force changes even if during maintenance window
     # creating list of network IDs that can later be referenced to remove the
     # apply now tag once the script has executed
@@ -669,7 +575,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
 
         # performing initial get to obtain all Meraki existing VPN info to add to
         # merakivpns list above
-        originalvpn = MerakiConfig.sdk_auth.organizations.getOrganizationThirdPartyVPNPeers(MerakiConfig.org_id)
+        originalvpn = MerakiConfig.sdk_auth.appliance.getOrganizationApplianceVpnThirdPartyVPNPeers(MerakiConfig.org_id)
         merakivpns.append(originalvpn)
 
         # Get access token to authenticate to Azure
@@ -704,6 +610,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
         # Generate random password for site to site VPN config
         psk = pwgenerator.generate()
 
+        logging.info("logging meraki vpns: " + str(new_meraki_vpns))
         new_meraki_vpns = merakivpns[0]
 
         # Loop through each VWAN hub
@@ -853,7 +760,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 return
 
             # Update Meraki VPN config
-            update_meraki_vpn = MerakiConfig.sdk_auth.organizations.updateOrganizationThirdPartyVPNPeers(
+            update_meraki_vpn = MerakiConfig.sdk_auth.appliance.updateOrganizationApplianceVpnThirdPartyVPNPeers(
                 MerakiConfig.org_id, new_meraki_vpns
                 )
 
