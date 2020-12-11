@@ -276,7 +276,7 @@ def clean_meraki_vwan_tags(mdashboard, remove_tag, tagged_networks):
 def meraki_vwan_hubs(tags_network):
     hubs = []
     for network in tags_network:
-        tags = meraki_convert_tags_to_list(network['tags'])
+        tags = network['tags']
         for tag in tags:
             try:
                 vwan_hub_name = re.match(MerakiConfig.primary_tag_regex, tag).group(1)
