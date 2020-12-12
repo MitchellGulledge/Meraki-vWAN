@@ -507,7 +507,7 @@ class MerakiConfig:
     secondary_tag_regex = f"(?i)^{tag_prefix}([a-zA-Z0-9_-]+)-[0-9]+-sec$"
     org_id = None
     # authenticating to the Meraki SDK
-    sdk_auth = meraki.DashboardAPI(api_key, suppress_logging=True)
+    sdk_auth = meraki.DashboardAPI(api_key, suppress_logging=True, print_console=True)
 
 
 class AzureConfig:
