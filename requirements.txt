@@ -1,5 +1,22 @@
---find-links wheelhouse
-meraki
+aiohttp==3.7.3
+async-timeout==3.0.1
+attrs==20.3.0
+azure-functions==1.5.0
+azure-functions-durable==1.0.0b11
+certifi==2020.12.5
+chardet==3.0.4
+dnspython==2.0.0
+furl==2.1.0
+idna==2.10
+ipwhois==1.2.0
+IPy==1.1
+meraki==1.4.0
+multidict==5.1.0
+orderedmultidict==1.0.1
 passwordgenerator==1.4
-ipwhois==1.1.0
-IPy==1.00
+python-dateutil==2.8.1
+requests==2.25.0
+six==1.15.0
+typing-extensions==3.7.4.3
+urllib3==1.26.2
+yarl==1.6.3
