@@ -12,7 +12,7 @@ class MX():
     MX encapsulates the information of a MX.
     '''
 
-    def __init__(self, network_id: str='', mx: dict={}, org_id):
+    def __init__(self, network_id: str='', mx: dict={}, org_id=None):
         '''
         Construct a new 'MX' object.
 
