@@ -43,3 +43,4 @@ __pycache__/
 *$py.class
 
 .idea
+.DS_Store
