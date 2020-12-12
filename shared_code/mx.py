@@ -39,8 +39,8 @@ class MX():
 
         @return: None
         '''
-        WAN_1 = 'WAN 1'
-        WAN_2 = 'WAN 2'
+        WAN_1 = 'wan1'
+        WAN_2 = 'wan2'
 
         mdashboard = meraki.DashboardAPI(api_key=API_KEY, suppress_logging=True, print_console=True)
         org_uplinks = mdashboard.appliance.getOrganizationApplianceUplinkStatuses(self.org_id)
