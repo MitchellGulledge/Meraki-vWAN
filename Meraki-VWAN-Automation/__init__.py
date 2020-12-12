@@ -666,7 +666,8 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                     appliance = Appliance(network_info,
                                           warm_spare_settings.get('enabled'),
                                           warm_spare_settings.get('primarySerial'),
-                                          warm_spare_settings.get('spareSerial'))
+                                          warm_spare_settings.get('spareSerial'),
+                                          MerakiConfig.org_id)
                 else:
                     logging.info(f"MX device not found in {network['name']}, skipping network.")
                     continue
