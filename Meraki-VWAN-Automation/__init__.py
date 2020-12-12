@@ -678,7 +678,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                     continue  # if box isnt firmware skip to next network
 
                 # gets branch local vpn subnets
-                va = MerakiConfig.sdk_auth.networks.appliance.getNetworkApplianceVpnSiteToSiteVpn(network_info)
+                va = MerakiConfig.sdk_auth.appliance.getNetworkApplianceVpnSiteToSiteVpn(network_info)
 
                 # filter for subnets in vpn
                 privsub = ([x['localSubnet'] for x in va['subnets'] if x['useVpn'] is True])
