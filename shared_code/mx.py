@@ -12,7 +12,7 @@ class MX():
     MX encapsulates the information of a MX.
     '''
 
-    def __init__(self, network_id: str='', mx: dict={}):
+    def __init__(self, network_id: str='', mx: dict={}, org_id):
         '''
         Construct a new 'MX' object.
 
@@ -21,6 +21,7 @@ class MX():
         @return:           None
         '''
         self.network_id = network_id
+        self.org_id = org_id
         self.name = mx.get('name', '')
         self.model = mx.get('model', '')
         self.firmware = mx.get('firmware', '')
@@ -42,7 +43,7 @@ class MX():
         WAN_2 = 'WAN 2'
 
         mdashboard = meraki.DashboardAPI(api_key=API_KEY, suppress_logging=True, print_console=True)
-        org_uplinks = mdashboard.appliance.getOrganizationApplianceUplinkStatuses(MerakiConfig.org_id)
+        org_uplinks = mdashboard.appliance.getOrganizationApplianceUplinkStatuses(self.org_id)
         
         uplinks = []
         
