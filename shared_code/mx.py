@@ -42,7 +42,14 @@ class MX():
         WAN_2 = 'WAN 2'
 
         mdashboard = meraki.DashboardAPI(api_key=API_KEY, suppress_logging=True, print_console=True)
-        uplinks = mdashboard.devices.getNetworkDeviceUplink(self.network_id, self.serial)
+        org_uplinks = mdashboard.appliance.getOrganizationApplianceUplinkStatuses(MerakiConfig.org_id)
+        
+        uplinks = []
+        
+        for sites in org_uplinks:
+            if sites['networkId'] == network_id:
+                uplinks = sites['uplinks']
+        
         for uplink in uplinks:
             if uplink['status'] != NOT_CONNECTED:
                 if uplink['interface'] == WAN_1:
@@ -61,7 +68,7 @@ class MX():
         WAN_2 = 'wan2'
 
         mdashboard = meraki.DashboardAPI(api_key=API_KEY, suppress_logging=True, print_console=True)
-        settings = mdashboard.uplink_settings.getNetworkUplinkSettings(self.network_id)
+        settings = mdashboard.appliance.getNetworkApplianceTrafficShapingUplinkBandwidth(self.network_id)
         self.wan1.update(settings['bandwidthLimits'][WAN_1])
         self.wan2.update(settings['bandwidthLimits'][WAN_2])
 
