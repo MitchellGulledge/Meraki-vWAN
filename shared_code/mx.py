@@ -48,7 +48,7 @@ class MX():
         uplinks = []
         
         for sites in org_uplinks:
-            if sites['networkId'] == network_id:
+            if sites['networkId'] == self.network_id:
                 uplinks = sites['uplinks']
         
         for uplink in uplinks:
