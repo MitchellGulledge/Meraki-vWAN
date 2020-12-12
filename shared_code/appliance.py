@@ -13,7 +13,7 @@ class Appliance():
     If HA is configured, self.warmspare_enabled will be True and
     self.secondary will also have the MX information.
     '''
-    def __init__(self, network_id:str, enabled:bool, primary_serial:str, secondary_serial:str):
+    def __init__(self, network_id:str, enabled:bool, primary_serial:str, secondary_serial:str, org_id):
         '''
         Construct a new 'Appliance' object.
 
@@ -24,9 +24,10 @@ class Appliance():
         @return:                 None
         '''
         self.network_id = network_id
+        self.org_id = org_id
         self.warmspare_enabled = enabled
-        self.primary = MX(network_id, self._get_mx(primary_serial)) if primary_serial else MX()
-        self.secondary = MX(network_id, self._get_mx(secondary_serial)) if secondary_serial else MX()
+        self.primary = MX(network_id, self._get_mx(primary_serial), org_id) if primary_serial else MX()
+        self.secondary = MX(network_id, self._get_mx(secondary_serial), org_id) if secondary_serial else MX()
 
     def _get_mx(self, serial: str):
         '''
