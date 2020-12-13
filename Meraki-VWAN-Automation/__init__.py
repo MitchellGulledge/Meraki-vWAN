@@ -727,7 +727,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 azure_instance_0_config = get_meraki_ipsec_config(netname, azure_instance_0,
                                                                 azure_connected_subnets, psk, specific_tag)
                 azure_instance_1_config = get_meraki_ipsec_config(f"{netname}-sec", azure_instance_1,
-                                                                azure_connected_subnets, psk, f"['None']")
+                                                                azure_connected_subnets, psk, f"['none']")
 
                 primary_peer_exists = False
                 secondary_peer_exists = False
