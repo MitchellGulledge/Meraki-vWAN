@@ -611,7 +611,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
         psk = pwgenerator.generate()
 
         logging.info("logging meraki vpns: " + str(merakivpns[0]))
-        new_meraki_vpns = merakivpns[0][“peers”]
+        new_meraki_vpns = merakivpns[0]['peers']
 
         # Loop through each VWAN hub
         for hub in tagged_hubs:
@@ -732,15 +732,15 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 primary_peer_exists = False
                 secondary_peer_exists = False
 
-                logging.info("Parsed Meraki VPN output: " + str(merakivpns[0][“peers”]))
-                for site in merakivpns[0][“peers”]:
+                logging.info("Parsed Meraki VPN output: " + str(merakivpns[0]['peers']))
+                for site in merakivpns[0]['peers']:
                     if site['name'] == netname:
                         primary_peer_exists = True
                     if site['name'] == f"{netname}-sec":
                         secondary_peer_exists = True
 
                 if primary_peer_exists:
-                    for vpn_peer in merakivpns[0][“peers”]:
+                    for vpn_peer in merakivpns[0]['peers']:
                         if vpn_peer['name'] == netname:
                             vpn_peer['secret'] = psk
                             vpn_peer['privateSubnets'] = azure_connected_subnets
@@ -748,7 +748,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                     new_meraki_vpns.append(azure_instance_0_config)
 
                 if secondary_peer_exists:
-                    for vpn_peer in merakivpns[0][“peers”]:
+                    for vpn_peer in merakivpns[0]['peers']:
                         if vpn_peer['name'] == f"{netname}-sec":
                             vpn_peer['secret'] = psk
                             vpn_peer['privateSubnets'] = azure_connected_subnets
