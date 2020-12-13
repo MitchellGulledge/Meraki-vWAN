@@ -611,7 +611,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
         psk = pwgenerator.generate()
 
         logging.info("logging meraki vpns: " + str(merakivpns[0]))
-        new_meraki_vpns = merakivpns[0]
+        new_meraki_vpns = merakivpns[0][“peers”]
 
         # Loop through each VWAN hub
         for hub in tagged_hubs:
