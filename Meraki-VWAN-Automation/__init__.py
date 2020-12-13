@@ -760,6 +760,8 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 logging.info(f"No tagged networks found for hub {hub}.")
                 return
 
+            logging.info("updated Meraki VPN Config: " + str(new_meraki_vpns))
+                                  
             # Update Meraki VPN config
             update_meraki_vpn = MerakiConfig.sdk_auth.appliance.updateOrganizationApplianceVpnThirdPartyVPNPeers(
                 MerakiConfig.org_id, new_meraki_vpns
