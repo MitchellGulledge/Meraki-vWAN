@@ -136,7 +136,7 @@ def get_meraki_ipsec_config(name, public_ip, private_subnets, secret, network_ta
             "childPfsGroup": ["group14"],
             "childLifetime": 3600
         },
-        "networkTags": network_tags
+        "networkTags": [network_tags]
     }
 
     return ipsec_config
