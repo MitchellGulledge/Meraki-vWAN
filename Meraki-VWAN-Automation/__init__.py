@@ -773,7 +773,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
             if len(remove_network_id_list) > 0:
                 # no longer needed for v1 version of API since network['tags'] is a proper list
                 #clean_meraki_vwan_tags(MerakiConfig.sdk_auth, _VWAN_APPLY_NOW_TAG, meraki_networks)
-                new_tag_list = network[“tags”]
+                new_tag_list = network['tags']
                 new_tag_list.remove(_VWAN_APPLY_NOW_TAG)
                 MerakiConfig.sdk_auth.networks.updateNetwork(network['id'], tags=new_tag_list)
     else:
