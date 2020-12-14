@@ -775,8 +775,8 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 #clean_meraki_vwan_tags(MerakiConfig.sdk_auth, _VWAN_APPLY_NOW_TAG, meraki_networks)
                 new_tag_list = network['tags']
                 if _VWAN_APPLY_NOW_TAG in new_tag_list:
-                    new_tag_list.remove(_VWAN_APPLY_NOW_TAG)
-                MerakiConfig.sdk_auth.networks.updateNetwork(network['id'], tags=new_tag_list)
+                     new_tag_list.remove(_VWAN_APPLY_NOW_TAG)
+                     MerakiConfig.sdk_auth.networks.updateNetwork(network['id'], tags=new_tag_list)
     else:
         logging.info("Maintenance mode detected but it is not during scheduled hours "
                      f"or the {_VWAN_APPLY_NOW_TAG} tag has not been detected. Skipping updates")
