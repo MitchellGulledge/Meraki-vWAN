@@ -771,11 +771,15 @@ def main(MerakiTimer: func.TimerRequest) -> None:
 
             # Cleanup any found vwan-apply-now tags
             if len(remove_network_id_list) > 0:
+                logging.info("remove_network_id_list value: " + str(remove_network_id_list))
                 # no longer needed for v1 version of API since network['tags'] is a proper list
                 #clean_meraki_vwan_tags(MerakiConfig.sdk_auth, _VWAN_APPLY_NOW_TAG, meraki_networks)
                 new_tag_list = network['tags']
+                logging.info("pre-parsed network tag variable: " + str(new_tag_list))
+                                  
                 if _VWAN_APPLY_NOW_TAG in new_tag_list:
                      new_tag_list.remove(_VWAN_APPLY_NOW_TAG)
+                     logging.info("parsed network tag variable: " + str(new_tag_list))
                      MerakiConfig.sdk_auth.networks.updateNetwork(network['id'], tags=new_tag_list)
     else:
         logging.info("Maintenance mode detected but it is not during scheduled hours "
