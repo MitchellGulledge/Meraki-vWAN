@@ -648,6 +648,8 @@ def main(MerakiTimer: func.TimerRequest) -> None:
 
                 logging.info(f"Tags found for {network['name']} with hub {vwan_hub_info['name']} \
                     | Tags: {network['tags']}")
+                             
+                new_tag_list = network['tags'][:]
 
                 # need network ID in order to obtain device/serial information
                 network_info = network['id']
@@ -774,7 +776,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 logging.info("remove_network_id_list value: " + str(remove_network_id_list))
                 # no longer needed for v1 version of API since network['tags'] is a proper list
                 #clean_meraki_vwan_tags(MerakiConfig.sdk_auth, _VWAN_APPLY_NOW_TAG, meraki_networks)
-                new_tag_list = network['tags']
+                #new_tag_list = network['tags']
                 logging.info("pre-parsed network tag variable: " + str(new_tag_list))
                                   
                 if _VWAN_APPLY_NOW_TAG in new_tag_list:
