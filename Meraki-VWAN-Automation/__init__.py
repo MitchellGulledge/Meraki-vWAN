@@ -670,12 +670,12 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                                           warm_spare_settings.get('spareSerial'),
                                           MerakiConfig.org_id)
                 else:
-                    logging.info(f"MX device not found in {network['name']}, skipping network.")
+                    logging.info(f"MX device not found in {netname}, skipping network.")
                     continue
 
                 # check if appliance is on 15 firmware
                 if not appliance.is_firmware_compliant():
-                    logging.info(f"MX device for {network['name']} not running v15 firmware, skipping network.")
+                    logging.info(f"MX device for {netname} not running v15 firmware, skipping network.")
                     continue  # if box isnt firmware skip to next network
 
                 # gets branch local vpn subnets
@@ -693,14 +693,14 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 virtual_wan_site_link_update = update_azure_virtual_wan_site_links(virtual_wan['resourceGroup'], netname,
                                                                                     header_with_bearer_token, site_config)
                 if virtual_wan_site_link_update is None:
-                    logging.error(f"Virtual WAN Site Link for {network['name']} could not be created/updated, skipping to next network.")
+                    logging.error(f"Virtual WAN Site Link for {netname} could not be created/updated, skipping to next network.")
                     continue
 
                 # Create Virtual WAN Connection
                 vwan_connection_result = create_virtual_wan_connection(virtual_wan['resourceGroup'], vwan_hub_info['vpnGatewayName'], netname,
                                                                     AzureConfig.subscription_id, wans.items(), psk, header_with_bearer_token)
                 if vwan_connection_result is None:
-                    logging.error(f"Virtual WAN Connection for {network['name']} could not be created, skipping to next network.")
+                    logging.error(f"Virtual WAN Connection for {netname} could not be created, skipping to next network.")
                     continue
 
                 # Parse the vwan config file
@@ -720,7 +720,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                     azure_connected_subnets = vwan_config['connectedVirtualNetworks']
 
                 # Get specific vwan tag
-                for tag in network['tags']:
+                for tag in new_tag_list[:]:
                     if re.match(MerakiConfig.primary_tag_regex, tag):
                         specific_tag = tag
 
@@ -782,7 +782,7 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                 if _VWAN_APPLY_NOW_TAG in new_tag_list:
                      new_tag_list.remove(_VWAN_APPLY_NOW_TAG)
                      logging.info("parsed network tag variable: " + str(new_tag_list))
-                     MerakiConfig.sdk_auth.networks.updateNetwork(network['id'], tags=new_tag_list)
+                     MerakiConfig.sdk_auth.networks.updateNetwork(network_info, tags=new_tag_list)
     else:
         logging.info("Maintenance mode detected but it is not during scheduled hours "
                      f"or the {_VWAN_APPLY_NOW_TAG} tag has not been detected. Skipping updates")
