@@ -53,6 +53,158 @@ def get_bearer_token(resource_uri):
     return access_token
 
 
+# defining a vpn failover function that will failover if the Azure VPN gateway becomes unreachable
+def meraki_vpn_failover():
+
+    # obtaining current list of third party VPN peers
+    vpn_config_response = MerakiConfig.sdk_auth.appliance.getOrganizationApplianceVpnThirdPartyVPNPeers(
+        MerakiConfig.org_id
+    )
+
+    # creating list of current Meraki VPN peers
+    vpn_peers_list = vpn_config_response['peers']
+
+    logging.info("original VPN peers list: " + str(vpn_peers_list))
+
+    # creating list of tracked network IDs for monitoring vWAN VPN Health
+    network_id_list = []
+
+    # iterating through vpn peers list to identify tags we care about and make a list
+    for peers in vpn_peers_list:
+
+        # matching if vwan is in the network tags for any of the vpn peers
+        if 'vwan' in str(peers['networkTags']):
+
+            # performing org wide call to obtain network info and filtering by tag
+            org_network_response = MerakiConfig.sdk_auth.organizations.getOrganizationNetworks(
+                MerakiConfig.org_id, total_pages='all', tags = peers['networkTags']
+                )
+
+            # appending network ID for tunnel to network_id_list
+            network_id_list.append(org_network_response[0]['id'])
+
+
+    # obtaining org wide vpn status and filtering with the network_id_list 
+    # that tag contains networks with a tag containing vwan
+    vpn_response = MerakiConfig.sdk_auth.appliance.getOrganizationApplianceVpnStatuses(
+        MerakiConfig.org_id, total_pages='all', networkIds = network_id_list
+    )
+
+    # iterating through VPN response to see if any of the VPN peers we are tracking are detected as down
+    for vpns in vpn_response:
+        if vpns['thirdPartyVpnPeers'][0]['reachability'] != 'reachable':
+
+            logging.info("VPN detected as healthy for " + str(vpns['networkName']))
+        
+        else:
+
+            logging.info("VPN detected as Unhealthy, obtaining vpn event log")
+
+            # retrieving third party vpn events for network that is detected as down
+            events_response = MerakiConfig.sdk_auth.networks.getNetworkEvents(
+                vpns['networkId'],
+                total_pages=1,
+                includedEventTypes = 'vpn'
+            )
+
+            # parsing events_response to obtain raw event data to later iterate through if outage detected
+            events_response_data = events_response['events']
+
+            # indexing the last events data to later match against
+            event_data = events_response_data[-1]['eventData']
+
+            # searching event_data string to match if the following strings are in the element
+            # searching exactly for '(inbound) (0 bytes)' and '(outbound) (0 bytes)' in string
+            if '(inbound) (0 bytes)' in str(event_data) and '(outbound) (0 bytes)' in str(event_data):
+
+                logging.info("No interesting traffic detected ignoring failover")
+
+            else:
+
+                logging.info("Network Tunnel detected as down, initiating failover")
+
+                # Updating the third party VPN list to move the tag to either backup or primary tunnel
+                # vpn_peers_list is the list we need to update
+
+                # parsing to obtain current network name of down tunnel
+                down_network_ipsec_name = vpns['thirdPartyVpnPeers'][0]['name']
+
+                # match on tunnel name ending w/ -sec (indicating backup vWAN VPN config)
+                if '-sec' in str(down_network_ipsec_name):
+
+                    logging.info("Currently on backup tunnel need to failback to primary, updating vpn list")
+
+                    # iterating through meraki vpn list to update the network tags in the vpn config
+                    for vpn_config in vpn_peers_list:
+
+                        # matching on down_network_ipsec_name to ipsec tunnel name in vpn_peers_list
+                        if down_network_ipsec_name == vpn_config['name']:
+
+                            # creating original_tags variable to store vpn_config['networkTags'] 
+                            # to later add that value to the primary VPN tunnel networkTags
+                            original_tags = vpn_config['networkTags']
+
+                            # setting the networkTags for the backup VPN tunnel to None
+                            vpn_config['networkTags'] = ['none']
+
+                        # parsing vpn tunnel name to exclude -sec [-4] to get primary tunnel name
+                        if str(down_network_ipsec_name)[-4] == str(vpn_config['name']): 
+
+                            # setting networkTags for the primary vpn tunnel to the original_tags variable
+                            vpn_config['networkTags'] = original_tags
+
+                else:
+
+                    logging.info("Need to failover to backup VPN tunnel, updating list")
+
+                    # iterating through meraki vpn list to update the network tags in the vpn config
+                    for vpn_config in vpn_peers_list:
+
+                        # matching on down_network_ipsec_name to ipsec tunnel name in vpn_peers_list
+                        if down_network_ipsec_name == vpn_config['name']:
+
+                            # creating original_tags variable to store vpn_config['networkTags'] 
+                            # to later add that value to the secondary VPN tunnel networkTags
+                            original_tags = vpn_config['networkTags']
+
+                            # setting the networkTags for the primary VPN tunnel to None
+                            vpn_config['networkTags'] = ['none']
+
+                        # matching the vpn tunnel config name value and adding -sec for backup VPN tunnel
+                        if str(down_network_ipsec_name) + '-sec' == str(vpn_config['name']):
+
+                            # setting networkTags for the secondary vpn tunnel to the original_tags variable
+                            vpn_config['networkTags'] = original_tags
+
+    # final call to update Meraki VPN config
+    # need to add call to update VPN list
+    logging.info("New VPN peers list: " + str(vpn_peers_list))
+
+
+
+# defining function to delete tag placeholder network for customers migrating from v0 of the script to v1
+def delete_tag_placeholder():
+
+    # obtaining a list of all networks in customer organization
+    org_network_response = MerakiConfig.sdk_auth.organizations.getOrganizationNetworks(
+        MerakiConfig.org_id, total_pages='all'
+    )
+
+    # iterating through list of networks in org_network_response
+    for networks in org_network_response:
+
+        # matching network name on tag placeholder network name
+        if 'tag-placeholder' == networks['name']:
+
+            # deleting tag-placeholder network as it is no longer needed in v1
+            delete_network_response = MerakiConfig.sdk_auth.networks.deleteNetwork(
+                networks['id']
+            )
+
+            logging.info(delete_network_response)
+
+
+
 def get_site_config(location, vwan_id, address_prefixes, site_name, wans):
 
     vpn_site_links = []
