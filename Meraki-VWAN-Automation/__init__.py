@@ -56,6 +56,9 @@ def get_bearer_token(resource_uri):
 # defining a vpn failover function that will failover if the Azure VPN gateway becomes unreachable
 def meraki_vpn_failover():
 
+    # creating a variable that indicates whether or not the VPN config needs to be updated due to failover
+    needs_update = False
+    
     # obtaining current list of third party VPN peers
     vpn_config_response = MerakiConfig.sdk_auth.appliance.getOrganizationApplianceVpnThirdPartyVPNPeers(
         MerakiConfig.org_id
@@ -146,6 +149,9 @@ def meraki_vpn_failover():
 
                             # setting the networkTags for the backup VPN tunnel to None
                             vpn_config['networkTags'] = ['none']
+                            
+                            # setting needs_update = True since we have modified the networktags in the vpn list
+                            needs_update = True
 
                         # parsing vpn tunnel name to exclude -sec [-4] to get primary tunnel name
                         if str(down_network_ipsec_name)[-4] == str(vpn_config['name']): 
@@ -169,6 +175,9 @@ def meraki_vpn_failover():
 
                             # setting the networkTags for the primary VPN tunnel to None
                             vpn_config['networkTags'] = ['none']
+                            
+                            # setting needs_update = True since we have modified the tags in the vpn list
+                            needs_update = True
 
                         # matching the vpn tunnel config name value and adding -sec for backup VPN tunnel
                         if str(down_network_ipsec_name) + '-sec' == str(vpn_config['name']):
@@ -179,10 +188,13 @@ def meraki_vpn_failover():
     # final call to update Meraki VPN config
     logging.info("New VPN peers list: " + str(vpn_peers_list))
     
-    # Update Meraki VPN config
-    update_meraki_vpn = MerakiConfig.sdk_auth.appliance.updateOrganizationApplianceVpnThirdPartyVPNPeers(
-        MerakiConfig.org_id, vpn_peers_list
-    )
+    # if statement to see if needs_update = True to indicate if we need to update Meraki VPN peers
+    if needs_update == True:
+    
+        # Update Meraki VPN config
+        update_meraki_vpn = MerakiConfig.sdk_auth.appliance.updateOrganizationApplianceVpnThirdPartyVPNPeers(
+            MerakiConfig.org_id, vpn_peers_list
+        )
 
 
 # defining function to delete tag placeholder network for customers migrating from v0 of the script to v1
