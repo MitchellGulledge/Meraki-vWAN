@@ -679,6 +679,9 @@ def main(MerakiTimer: func.TimerRequest) -> None:
     for x in result_org_id:
         if x['name'] == MerakiConfig.org_name:
             MerakiConfig.org_id = x['id']
+                     
+    # executing function to delete tag placeholder network for customers migrating from v0 to v1 of the API
+    delete_tag_placeholder()
 
     # If no organization is mapped to the customer org name create logging error 
     if not MerakiConfig.org_id:
@@ -935,6 +938,8 @@ def main(MerakiTimer: func.TimerRequest) -> None:
                      new_tag_list.remove(_VWAN_APPLY_NOW_TAG)
                      logging.info("parsed network tag variable: " + str(new_tag_list))
                      MerakiConfig.sdk_auth.networks.updateNetwork(network_info, tags=new_tag_list)
+            meraki_vpn_failover()
     else:
         logging.info("Maintenance mode detected but it is not during scheduled hours "
                      f"or the {_VWAN_APPLY_NOW_TAG} tag has not been detected. Skipping updates")
+        meraki_vpn_failover()
