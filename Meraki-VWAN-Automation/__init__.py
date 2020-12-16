@@ -92,7 +92,7 @@ def meraki_vpn_failover():
 
     # iterating through VPN response to see if any of the VPN peers we are tracking are detected as down
     for vpns in vpn_response:
-        if vpns['thirdPartyVpnPeers'][0]['reachability'] != 'reachable':
+        if vpns['thirdPartyVpnPeers'][0]['reachability'] == 'reachable':
 
             logging.info("VPN detected as healthy for " + str(vpns['networkName']))
         
