@@ -159,7 +159,7 @@ def meraki_vpn_failover():
                     for vpn_config in vpn_peers_list:
 
                         # parsing vpn tunnel name to exclude -sec [-4] to get primary tunnel name
-                        if str(down_network_ipsec_name)[-4] == str(vpn_config['name']): 
+                        if str(down_network_ipsec_name)[0:-4] == str(vpn_config['name']): 
 
                             # setting networkTags for the primary vpn tunnel to the original_tags variable
                             vpn_config['networkTags'] = original_tags
