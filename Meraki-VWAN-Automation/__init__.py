@@ -177,9 +177,12 @@ def meraki_vpn_failover():
                             vpn_config['networkTags'] = original_tags
 
     # final call to update Meraki VPN config
-    # need to add call to update VPN list
     logging.info("New VPN peers list: " + str(vpn_peers_list))
-
+    
+    # Update Meraki VPN config
+    update_meraki_vpn = MerakiConfig.sdk_auth.appliance.updateOrganizationApplianceVpnThirdPartyVPNPeers(
+        MerakiConfig.org_id, vpn_peers_list
+    )
 
 
 # defining function to delete tag placeholder network for customers migrating from v0 of the script to v1
