@@ -53,6 +53,7 @@ def get_bearer_token(resource_uri):
     return access_token
 
 
+
 # defining a vpn failover function that will failover if the Azure VPN gateway becomes unreachable
 def meraki_vpn_failover():
 
@@ -95,6 +96,7 @@ def meraki_vpn_failover():
 
     # iterating through VPN response to see if any of the VPN peers we are tracking are detected as down
     for vpns in vpn_response:
+
         if vpns['thirdPartyVpnPeers'][0]['reachability'] == 'reachable':
 
             logging.info("VPN detected as healthy for " + str(vpns['networkName']))
@@ -153,6 +155,9 @@ def meraki_vpn_failover():
                             # setting needs_update = True since we have modified the networktags in the vpn list
                             needs_update = True
 
+                    # iterating through meraki vpn list to update the network tags in the vpn config
+                    for vpn_config in vpn_peers_list:
+
                         # parsing vpn tunnel name to exclude -sec [-4] to get primary tunnel name
                         if str(down_network_ipsec_name)[-4] == str(vpn_config['name']): 
 
@@ -179,6 +184,9 @@ def meraki_vpn_failover():
                             # setting needs_update = True since we have modified the tags in the vpn list
                             needs_update = True
 
+                    # iterating through meraki vpn list to update the network tags in the vpn config
+                    for vpn_config in vpn_peers_list:
+
                         # matching the vpn tunnel config name value and adding -sec for backup VPN tunnel
                         if str(down_network_ipsec_name) + '-sec' == str(vpn_config['name']):
 
@@ -190,6 +198,8 @@ def meraki_vpn_failover():
     
     # if statement to see if needs_update = True to indicate if we need to update Meraki VPN peers
     if needs_update == True:
+    
+        logging.info("updating vpn list")
     
         # Update Meraki VPN config
         update_meraki_vpn = MerakiConfig.sdk_auth.appliance.updateOrganizationApplianceVpnThirdPartyVPNPeers(
