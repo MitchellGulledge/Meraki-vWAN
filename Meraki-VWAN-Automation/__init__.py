@@ -87,6 +87,9 @@ def meraki_vpn_failover():
             # appending network ID for tunnel to network_id_list
             network_id_list.append(org_network_response[0]['id'])
 
+    # if there isnt any networks in the list to track exit the function
+    if len(network_id_list) == 0:
+        return
 
     # obtaining org wide vpn status and filtering with the network_id_list 
     # that tag contains networks with a tag containing vwan
