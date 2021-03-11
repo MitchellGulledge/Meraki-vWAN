@@ -112,7 +112,8 @@ def meraki_vpn_failover():
             events_response = MerakiConfig.sdk_auth.networks.getNetworkEvents(
                 vpns['networkId'],
                 total_pages=1,
-                includedEventTypes = 'vpn'
+                includedEventTypes = 'vpn',
+                productType = 'appliance'
             )
 
             # parsing events_response to obtain raw event data to later iterate through if outage detected
