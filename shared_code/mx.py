@@ -4,7 +4,7 @@ import meraki
 from __app__.shared_code.interface import Interface
 
 API_KEY = API_KEY = os.environ.get('meraki_api_key')
-FIRMWARE = 'wired-15'
+FIRMWARE = ['wired-15','wired-16','wired-17']
 NOT_CONNECTED = 'Not connected'
 
 class MX():
@@ -142,4 +142,4 @@ class MX():
         @rtype:  boolean
         @return: True / False
         '''
-        return self.firmware[0:8] == FIRMWARE
+        return self.firmware[0:8] in FIRMWARE
