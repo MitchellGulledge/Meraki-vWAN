@@ -3,7 +3,7 @@ async-timeout==3.0.1
 attrs==20.3.0
 azure-functions==1.5.0
 azure-functions-durable==1.0.0b11
-certifi==2020.12.5
+certifi==2022.12.7
 chardet==3.0.4
 dnspython==2.0.0
 furl==2.1.0
